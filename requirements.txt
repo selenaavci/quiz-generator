@@ -1,0 +1,6 @@
+streamlit
+PyPDF2
+python-pptx
+aiohttp
+openpyxl
+python-docx
