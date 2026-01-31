@@ -2,9 +2,13 @@
 import os
 import aiohttp
 
+VLLM_BASE_URL = "https://openrouter.ai/api/v1"
+LLM_API_KEY   = "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"
+MODEL_NAME    = "meta-llama/llama-3.1-8b-instruct:free"
 
-DEFAULT_BASE_URL = "http://phi-4-predictor.tyf-ai-chatbot.svc.cluster.local:8080/v1"
-DEFAULT_MODEL = "phi-4"
+OPENROUTER_APP_NAME = "OdeaMind QuizGen"
+OPENROUTER_APP_URL  = "https://quiz-generator-b5xyzn5ev3ynojz6edlq4y.streamlit.app/"
+
 
 
 def _env(name: str, default: str = "") -> str:
@@ -23,8 +27,8 @@ class MistralClient:
     """
 
     def __init__(self):
-        self.base_url = _env("VLLM_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
-        self.model_name = _env("MODEL_NAME", DEFAULT_MODEL)
+        self.base_url = _env("VLLM_BASE_URL", "").rstrip("/")
+        self.model_name = _env("MODEL_NAME", "")
         self.api_key = _env("LLM_API_KEY", "")
 
         # Optional headers (used by OpenRouter, harmless for others)
