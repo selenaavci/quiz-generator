@@ -6,9 +6,9 @@ from typing import Dict, List, Tuple
 
 import streamlit as st
 
-from loaders.file_loader import load_file
-from logic.paragraph_selector import extract_context_chunks
-from logic.question_router import generate_quiz
+from file_loader import load_file
+from paragraph_selector import extract_context_chunks
+from question_router import generate_quiz
 
 from excel_exporter import ExcelMeta, export_quiz_to_xlsx
 
