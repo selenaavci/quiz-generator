@@ -1,8 +1,8 @@
 import asyncio
 import json
-from loaders.file_loader import load_file
-from logic.paragraph_selector import extract_context_chunks
-from logic.question_router import generate_quiz
+from file_loader import load_file
+from paragraph_selector import extract_context_chunks
+from question_router import generate_quiz
 
 
 def run_quiz_generation(
