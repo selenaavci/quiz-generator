@@ -3,11 +3,11 @@ import os
 import aiohttp
 
 VLLM_BASE_URL = "https://openrouter.ai/api/v1"
-LLM_API_KEY   = "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"
+LLM_API_KEY   = 
 MODEL_NAME    = "meta-llama/llama-3.1-8b-instruct:free"
 
 OPENROUTER_APP_NAME = "OdeaMind QuizGen"
-OPENROUTER_APP_URL  = "https://quiz-generator-b5xyzn5ev3ynojz6edlq4y.streamlit.app/"
+OPENROUTER_APP_URL  = 
 
 
 
