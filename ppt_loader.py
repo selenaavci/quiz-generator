@@ -1,5 +1,5 @@
 from pptx import Presentation
-
+from .text_cleaner import clean_extracted_text
 
 def load_ppt(path: str) -> str:
     "PPTX dosyasından tüm slayt metinlerinin çıkarımı"
@@ -12,7 +12,7 @@ def load_ppt(path: str) -> str:
                 if hasattr(shape, "text"):
                     text += shape.text + "\n"
 
-        return text.strip()
+        return clean_extracted_text(text.strip())
 
     except Exception as e:
         raise RuntimeError(f"PPTX okunamadı: {e}")
