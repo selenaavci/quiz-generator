@@ -1,16 +1,19 @@
-from PyPDF2 import PdfReader
+import fitz  
+
 from text_cleaner import clean_extracted_text 
 
 def load_pdf(path: str) -> str:
-    "PDF dosyasından metin çıkarımı"
-    text = ""
+    text_parts = []
     try:
-        reader = PdfReader(path)
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\n"
+        doc = fitz.open(path)
+        for page in doc:
+            t = page.get_text("text")
+            if t:
+                text_parts.append(t)
+        doc.close()
     except Exception as e:
         raise RuntimeError(f"PDF okunmadı: {e}")
 
-    return clean_extracted_text(text.strip())
+    text = "\n".join(text_parts).strip()
+    return clean_extracted_text(text) if text else ""
+
