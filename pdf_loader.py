@@ -1,10 +1,10 @@
 from PyPDF2 import PdfReader
-
+from text_cleaner import clean_extracted_text 
 
 def load_pdf(path: str) -> str:
     "PDF dosyasından metin çıkarımı"
-    text = "" 
-    try: 
+    text = ""
+    try:
         reader = PdfReader(path)
         for page in reader.pages:
             extracted = page.extract_text()
@@ -13,4 +13,4 @@ def load_pdf(path: str) -> str:
     except Exception as e:
         raise RuntimeError(f"PDF okunmadı: {e}")
 
-    return text.strip()
+    return clean_extracted_text(text.strip())
