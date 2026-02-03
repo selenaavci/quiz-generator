@@ -1,5 +1,5 @@
 from pptx import Presentation
-from .text_cleaner import clean_extracted_text
+from text_cleaner import clean_extracted_text
 
 def load_ppt(path: str) -> str:
     "PPTX dosyasından tüm slayt metinlerinin çıkarımı"
