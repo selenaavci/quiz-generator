@@ -344,6 +344,19 @@ def _options_too_similar(options: Dict[str, str], threshold: float = 0.80) -> bo
     return False
 
 
+_BAD_OPTION_PAT = re.compile(r"\bsorusu\b", re.IGNORECASE)
+
+def _mcq_has_meta_options(values_norm: list[str]) -> bool:
+    if any(_BAD_OPTION_PAT.search(v) for v in values_norm):
+        return True
+
+    meta_phrases = (
+        "tanım", "amaç", "sonuç", "kapsam", "örnek", "açıklama",
+        "definition", "purpose", "result", "scope", "example"
+    )
+    return False
+    
+
 def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
     if not isinstance(mcq, dict):
         return False
@@ -364,8 +377,10 @@ def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
         if not v:
             return False
         values.append(_normalize_text(v))
+        
+    if _mcq_has_meta_options(values):
+        return False
 
-    # options must be meaningfully different
     if len(set(values)) < 4:
         return False
 
