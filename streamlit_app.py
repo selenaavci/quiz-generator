@@ -12,7 +12,16 @@ from question_router import generate_quiz
 
 from excel_exporter import ExcelMeta, export_quiz_to_xlsx
 
+# Streamlit Secrets -> ENV bridge
+if "LLM_API_KEY" in st.secrets:
+    os.environ["LLM_API_KEY"] = st.secrets["LLM_API_KEY"]
 
+if "LLM_BASE_URL" in st.secrets:
+    os.environ["LLM_BASE_URL"] = st.secrets["LLM_BASE_URL"]
+
+if "LLM_MODEL" in st.secrets:
+    os.environ["LLM_MODEL"] = st.secrets["LLM_MODEL"]
+    
 def run_async(coro):
     """
     Streamlit bazen zaten çalışan bir event-loop içinde çalışabilir.
