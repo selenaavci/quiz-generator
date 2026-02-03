@@ -2,6 +2,8 @@
 import os
 import aiohttp
 
+
+# -------- Defaults (local cluster fallback) --------
 DEFAULT_BASE_URL = "http://phi-4-predictor.tyf-ai-chatbot.svc.cluster.local:8080/v1"
 DEFAULT_MODEL = "phi-4"
 
@@ -12,21 +14,12 @@ def _env(name: str, default: str = "") -> str:
 
 
 class MistralClient:
-    """
-    OpenAI-compatible /v1/chat/completions client.
-
-    Supports:
-    - vLLM (OpenAI-compatible)
-    - Groq
-    - OpenRouter
-    """
-
     def __init__(self):
-        self.base_url = _env("VLLM_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
-        self.model_name = _env("MODEL_NAME", DEFAULT_MODEL)
+        self.base_url = _env("LLM_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+        self.model_name = _env("LLM_MODEL", DEFAULT_MODEL)
         self.api_key = _env("LLM_API_KEY", "")
 
-        # Optional headers (used by OpenRouter, harmless for others)
+        # Optional OpenRouter headers (safe for others)
         self.extra_headers = {}
         app_name = _env("OPENROUTER_APP_NAME", "")
         app_url = _env("OPENROUTER_APP_URL", "")
@@ -54,6 +47,8 @@ class MistralClient:
             "Content-Type": "application/json",
             **self.extra_headers,
         }
+
+        # OpenRouter / hosted providers
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
@@ -62,12 +57,19 @@ class MistralClient:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             try:
                 async with session.post(url, json=payload, headers=headers) as resp:
-                    text = await resp.text()
+                    raw_text = await resp.text()
+
                     if resp.status != 200:
                         raise RuntimeError(
-                            f"LLM error {resp.status}: {text[:600]}"
+                            f"LLM error {resp.status}: {raw_text[:600]}"
                         )
-                    data = await resp.json()
+
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        raise RuntimeError(
+                            f"LLM response parse error: {raw_text[:600]}"
+                        )
 
                 return data["choices"][0]["message"]["content"]
 
