@@ -4,3 +4,4 @@ python-pptx
 aiohttp
 openpyxl
 python-docx
+pymupdf
