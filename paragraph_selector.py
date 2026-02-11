@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 
 def split_paragraphs(text: str):
@@ -77,9 +77,16 @@ def chunk_paragraph_with_overlap(paragraph: str, max_words=250, overlap_words=40
     return chunks
 
 
-def extract_context_chunks(text: str, max_words: int = 250, min_words: int = 40, overlap_words: int = 0):
+def extract_context_chunks(text: str, max_words: int = 250, min_words: int = 40, overlap_words: int = 0, metrics: Dict[str, Any] = None):
     paragraphs = split_paragraphs(text)
+
+    if metrics is not None:
+        metrics["preprocessing_total_paragraphs"] = len(paragraphs)
+
     paragraphs = merge_small_paragraphs(paragraphs, min_words=min_words)
+
+    if metrics is not None:
+        metrics["preprocessing_merged_paragraphs"] = len(paragraphs)
 
     all_chunks = []
     for para in paragraphs:
@@ -88,6 +95,9 @@ def extract_context_chunks(text: str, max_words: int = 250, min_words: int = 40,
         else:
             chunks = chunk_paragraph(para, max_words=max_words)
         all_chunks.extend(chunks)
+        
+        if metrics is not None:
+            metrics["preprocessing_selected_paragraphs"] = len(all_chunkstotal)
 
     return all_chunks
 

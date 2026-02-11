@@ -4,7 +4,7 @@ import string
 import hashlib
 from typing import List, Tuple, Dict, Any, Union
 
-from prompts import (
+from ai.prompts import (
     prompt_mcq,
     prompt_true_false,
     prompt_fill,
@@ -12,7 +12,7 @@ from prompts import (
     prompt_mcq_stage2_distractors,
     prompt_mcq_stage3_verify,
 )
-from parser import (
+from ai.parser import (
     parse_mcq,
     parse_true_false,
     parse_fill,
@@ -20,10 +20,10 @@ from parser import (
     parse_mcq_stage2,
     parse_mcq_stage3,
 )
-from oss_client import MistralClient
+from ai.oss_client import MistralClient
 
 try:
-    from paragraph_selector import pick_fill_sentence
+    from logic.paragraph_selector import pick_fill_sentence
 except Exception:
     pick_fill_sentence = None
 
@@ -118,6 +118,11 @@ def _m_inc(metrics: dict, key: str, n: int = 1) -> None:
     if metrics is None:
         return
     metrics[key] = int(metrics.get(key, 0)) + n
+
+
+async def _llm_generate(client: MistralClient, metrics: dict, **kwargs):
+    _m_inc(metrics, "llm_call_count")
+    return await client.generate(**kwargs)
 
 
 _ABSOLUTE_PAT = re.compile(
@@ -344,19 +349,6 @@ def _options_too_similar(options: Dict[str, str], threshold: float = 0.80) -> bo
     return False
 
 
-_BAD_OPTION_PAT = re.compile(r"\bsorusu\b", re.IGNORECASE)
-
-def _mcq_has_meta_options(values_norm: list[str]) -> bool:
-    if any(_BAD_OPTION_PAT.search(v) for v in values_norm):
-        return True
-
-    meta_phrases = (
-        "tanım", "amaç", "sonuç", "kapsam", "örnek", "açıklama",
-        "definition", "purpose", "result", "scope", "example"
-    )
-    return False
-    
-
 def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
     if not isinstance(mcq, dict):
         return False
@@ -377,10 +369,8 @@ def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
         if not v:
             return False
         values.append(_normalize_text(v))
-        
-    if _mcq_has_meta_options(values):
-        return False
 
+    # options must be meaningfully different
     if len(set(values)) < 4:
         return False
 
@@ -420,7 +410,8 @@ async def _generate_mcq_multistage(
 
     # Stage 1: Core
     p1 = prompt_mcq_stage1_core(paragraph, difficulty=difficulty)
-    raw1 = await client.generate(
+    raw1 = await _llm_generate(
+        client, metrics,
         messages=[{"role": "user", "content": p1}],
         temperature=0.2,
         max_tokens=500,
@@ -448,7 +439,8 @@ async def _generate_mcq_multistage(
             rationale=rationale,
             context=paragraph,
         )
-        raw2 = await client.generate(
+        raw2 = await _llm_generate(
+            client, metrics,
             messages=[{"role": "user", "content": p2}],
             temperature=0.6,
             max_tokens=300,
@@ -468,7 +460,8 @@ async def _generate_mcq_multistage(
             correct_letter=mcq["correct"],
             context=paragraph,
         )
-        raw3 = await client.generate(
+        raw3 = await _llm_generate(
+            client, metrics,
             messages=[{"role": "user", "content": p3}],
             temperature=0.2,
             max_tokens=300,
@@ -492,6 +485,7 @@ async def _generate_mcq_multistage(
                 _m_inc("mcq_multistage_success")
                 mcq["explanation"] = rationale
                 mcq["mcq_answer_type"] = answer_type
+                mcq["difficulty"] = int(difficulty)
                 return mcq
             else:
                 _m_inc("mcq_option_guard_fail")
@@ -553,7 +547,8 @@ async def _generate_tf_with_target(
                 + "' olmalı. Cevap formatını bozma."
             )
 
-            raw = await client.generate(
+            raw = await _llm_generate(
+                client, metrics,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.25,
                 max_tokens=260
@@ -564,18 +559,14 @@ async def _generate_tf_with_target(
 
             q_text = (parsed.get("question") or "").strip()
 
-            if _is_negative_sentence(q_text):
-                _m_inc(metrics, "tf_negative_count")
-            else:
-                _m_inc(metrics, "tf_positive_count")
-
             if _has_absolute_language(q_text) and not _absolute_supported_by_context(q_text, paragraph):
                 _m_inc(metrics, "tf_absolute_guard_triggered")
-                last_err = ValueError("TF absoulte guard: Mutlak ifade context tarafından desteklenmiyor.")
+                last_err = ValueError("TF absolute guard: Mutlak ifade context tarafından desteklenmiyor.")
                 continue
 
             if _tf_answer_matches(target, parsed):
                 parsed["tf_target"] = target
+                parsed["difficult"] = int(d)
 
                 if _is_negative_sentence(parsed.get("question", "")):
                     _m_inc(metrics, "tf_negative_count")
@@ -630,7 +621,6 @@ def _candidate_fill_sentences(paragraph: str, k: int = 3) -> List[str]:
     if not p:
         return []
 
-    # Prefer your paragraph_selector heuristic if available
     top = None
     if pick_fill_sentence:
         try:
@@ -678,19 +668,19 @@ def _candidate_fill_sentences(paragraph: str, k: int = 3) -> List[str]:
     return out[:k] if out else [p]
 
 
-def _salvage_fill(parsed: dict, source_sentence: str) -> dict:
+def _salvage_fill(parsed: dict, source_sentence: str, metrics: dict = None) -> dict:
     q = _normalize_blank(str(parsed.get("question", "") or ""))
     a = str(parsed.get("answer", "") or "").strip()
 
     if not q or not a:
         return parsed
 
-    # If model forgot blank but answer exists in sentence, replace it
     if "_____" not in q and source_sentence and a.lower() in source_sentence.lower():
         pattern = re.compile(re.escape(a), re.IGNORECASE)
         s2, n = pattern.subn("_____", source_sentence, count=1)
         if n > 0:
             parsed["question"] = _normalize_blank(s2)
+            _m_inc(metrics, "salvage_triggered_count")
             return parsed
 
     parsed["question"] = q
@@ -763,7 +753,8 @@ async def _generate_fill_with_retry(
             d = _difficulty_value(difficulty_setting, question_index * 10 + attempt)
             p = prompt_fill(sentence, difficulty=d)
 
-            raw = await client.generate(
+            raw = await _llm_generate(
+                client, metrics,
                 messages=[{"role": "user", "content": p}],
                 temperature=0.2,
                 max_tokens=360
@@ -771,10 +762,11 @@ async def _generate_fill_with_retry(
             last_raw_preview = (raw or "")[:400]
 
             parsed = parse_fill(raw)
-            parsed = _salvage_fill(parsed, source_sentence=sentence)
+            parsed = _salvage_fill(parsed, source_sentence=sentence, metrics=metrics)
             parsed["question"] = _normalize_blank(parsed.get("question", ""))
 
             if _is_good_fill(parsed, metrics=metrics, context=paragraph):
+                parsed["difficulty"] = int(d)
                 return parsed
 
             last_err = ValueError("Fill kalite kontrolünden geçemedi (blank/answer uyumsuz).")
@@ -810,8 +802,11 @@ async def generate_one_question(
             _m_inc(metrics, "mcq_multistage_fail")
 
             legacy_prompt = prompt_mcq(paragraph, difficulty=d)
-            raw = await client.generate(messages=[{"role": "user", "content": legacy_prompt}])
-            return parse_mcq(raw)
+            raw = await _llm_generate(client, metrics, messages=[{"role": "user", "content": legacy_prompt}])
+            out = parse_mcq(raw)
+            if isinstance(out, dict):
+                out["difficulty"] = int(d)
+            return out
 
     if qtype == "tf":
         _m_inc(metrics, "tf_total")
@@ -869,6 +864,14 @@ async def generate_quiz(
     client = MistralClient()
     quiz: List[Dict[str, Any]] = []
     metrics = {
+        "preprocessing_total_paragraphs": 0,
+        "preprocessing_merged_paragraphs": 0,
+        "preprocessing_selected_paragraphs": 0,
+
+        "llm_call_count": 0,
+        "question_generation_retry_count": 0,
+        "salvage_triggered_count": 0,
+
         "mcq_total": 0,
         "mcq_multistage_success": 0,
         "mcq_multistage_fail": 0,
@@ -905,6 +908,8 @@ async def generate_quiz(
         "skip_too_similar": 0,
     }
 
+    metrics["preprocessing_selected_paragraphs"] = len(paragraphs)
+
     type_plan = _build_type_plan(mcq_count, tf_count, fill_count)
 
     seen_question_sigs = set()
@@ -933,6 +938,9 @@ async def generate_quiz(
         while tries < max_tries:
             tries += 1
 
+            if tries > 1:
+                _m_inc(metrics, "question_generation_retry_count")
+
             paragraph, cursor = _select_best_paragraph(paragraphs, qtype, cursor)
             src_preview = (paragraph[:200] + "...") if paragraph else ""
             src_sig = _signature(paragraph)
@@ -953,7 +961,6 @@ async def generate_quiz(
                 tf_counter += 1
                 tf_local_index = tf_counter
 
-            # Source dedup policy:
             if qtype in ("mcq", "fill") and tries <= 3 and src_sig in seen_source_sigs:
                 continue
 
@@ -990,7 +997,6 @@ async def generate_quiz(
                 recent_sources.append(src_sig)
                 all_used_sources.append(src_sig)
 
-                # Track sources except TF (TF already diverse enough)
                 if qtype != "tf":
                     seen_source_sigs.add(src_sig)
 
