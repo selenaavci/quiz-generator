@@ -4,7 +4,7 @@ import string
 import hashlib
 from typing import List, Tuple, Dict, Any, Union
 
-from prompts import (
+from ai.prompts import (
     prompt_mcq,
     prompt_true_false,
     prompt_fill,
@@ -12,7 +12,7 @@ from prompts import (
     prompt_mcq_stage2_distractors,
     prompt_mcq_stage3_verify,
 )
-from parser import (
+from ai.parser import (
     parse_mcq,
     parse_true_false,
     parse_fill,
@@ -20,10 +20,10 @@ from parser import (
     parse_mcq_stage2,
     parse_mcq_stage3,
 )
-from oss_client import MistralClient
+from ai.oss_client import MistralClient
 
 try:
-    from paragraph_selector import pick_fill_sentence
+    from logic.paragraph_selector import pick_fill_sentence
 except Exception:
     pick_fill_sentence = None
 
@@ -64,6 +64,26 @@ def _difficulty_for_question(label: str, i: int) -> int:
     return lo + (n % span)
 
 
+def _get_difficulty_count(metrics: dict, d: int) -> int:
+    if not isinstance(metrics, dict):
+        return 0
+    return int(metrics.get(f"difficult_count_{d}", 0))
+
+
+def _pick_balanced_from_band(label: str, i: int, metrics: dict) -> int:
+    lab = _normalize_difficulty_label(label)
+    lo, hi = DIFFICULTY_BANDS.get(lab, (2, 4))
+    candidates = list(range(lo, hi + 1))
+
+    counts = [(d, _get_difficulty_count(metrics, d)) for d in candidates]
+    min_count = min(c for _, c in counts)
+    best = [d for d, c in counts if c == min_count]
+
+    h = hashlib.md5(f"{lab}:{i}".encode("utf-8")).hexdigest()
+    n = int(h[:8], 16)
+    return best[n % len(best)]
+
+
 def _difficulty_value(difficulty: Union[int, str], i: int) -> int:
     """
     difficulty can be:
@@ -80,8 +100,19 @@ def _difficulty_value(difficulty: Union[int, str], i: int) -> int:
         return _difficulty_for_question(str(difficulty), i)
 
 
+def _difficulty_value_balanced(difficulty: Union[int, str], i: int, metrics: dict) -> int:
+    if isinstance(difficulty, int):
+        return max(1, min(5, difficulty))
+
+    try:
+        di = int(str(difficulty).strip())
+        return max(1, min(5, di))
+    except Exception:
+        return _pick_balanced_from_band(str(difficulty), i, metrics)
+
+
 # ============================================================
-# Text normalization & dedup helpers & Mutlak ifade 
+# Text normalization & dedup helpers & Mutlak ifade
 # ============================================================
 
 _PUNCT_TABLE = str.maketrans("", "", string.punctuation + "“”’‘…•–—")
@@ -792,7 +823,7 @@ async def generate_one_question(
     metrics: dict = None,
 ) -> Dict[str, Any]:
 
-    d = _difficulty_value(difficulty_setting, question_index)
+    d = _difficulty_value_balanced(difficulty_setting, question_index, metrics)
 
     if qtype == "mcq":
         try:
@@ -814,7 +845,7 @@ async def generate_one_question(
             out = await _generate_tf_with_target(
                 client=client,
                 paragraph=paragraph,
-                difficulty_setting=difficulty_setting,
+                difficulty_setting=d,
                 question_index=(tf_index if tf_index is not None else question_index),
                 metrics=metrics
             )
@@ -830,7 +861,7 @@ async def generate_one_question(
             out = await _generate_fill_with_retry(
                 client=client,
                 paragraph=paragraph,
-                difficulty_setting=difficulty_setting,
+                difficulty_setting=d,
                 question_index=question_index,
                 metrics=metrics
             )
@@ -871,6 +902,12 @@ async def generate_quiz(
         "llm_call_count": 0,
         "question_generation_retry_count": 0,
         "salvage_triggered_count": 0,
+
+        "difficulty_count_1": 0,
+        "difficulty_count_2": 0,
+        "difficulty_count_3": 0,
+        "difficulty_count_4": 0,
+        "difficulty_count_5": 0,
 
         "mcq_total": 0,
         "mcq_multistage_success": 0,
@@ -990,6 +1027,15 @@ async def generate_quiz(
 
                 q["source"] = src_preview
                 quiz.append(q)
+
+                dd = q.get("difficulty")
+                try:
+                    dd = int(dd)
+                except Exception:
+                    dd = None
+
+                if dd in (1, 2, 3, 4, 5):
+                    metrics[f"difficulty_count{dd}"] = int(metrics.get(f"difficulty_count{dd}", 0)) + 1
 
                 seen_question_sigs.add(q_sig)
                 seen_question_norms.append(q_norm)
