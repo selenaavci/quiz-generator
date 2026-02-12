@@ -95,9 +95,9 @@ def extract_context_chunks(text: str, max_words: int = 250, min_words: int = 40,
         else:
             chunks = chunk_paragraph(para, max_words=max_words)
         all_chunks.extend(chunks)
-        
-        if metrics is not None:
-            metrics["preprocessing_selected_paragraphs"] = len(all_chunkstotal)
+
+    if metrics is not None:
+        metrics["preprocessing_selected_paragraphs"] = len(all_chunks)
 
     return all_chunks
 

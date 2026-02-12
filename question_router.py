@@ -4,7 +4,7 @@ import string
 import hashlib
 from typing import List, Tuple, Dict, Any, Union
 
-from prompts import (
+from ai.prompts import (
     prompt_mcq,
     prompt_true_false,
     prompt_fill,
@@ -12,7 +12,7 @@ from prompts import (
     prompt_mcq_stage2_distractors,
     prompt_mcq_stage3_verify,
 )
-from parser import (
+from ai.parser import (
     parse_mcq,
     parse_true_false,
     parse_fill,
@@ -20,10 +20,10 @@ from parser import (
     parse_mcq_stage2,
     parse_mcq_stage3,
 )
-from oss_client import MistralClient
+from ai.oss_client import MistralClient
 
 try:
-    from paragraph_selector import pick_fill_sentence
+    from logic.paragraph_selector import pick_fill_sentence
 except Exception:
     pick_fill_sentence = None
 
@@ -67,7 +67,7 @@ def _difficulty_for_question(label: str, i: int) -> int:
 def _get_difficulty_count(metrics: dict, d: int) -> int:
     if not isinstance(metrics, dict):
         return 0
-    return int(metrics.get(f"difficult_count_{d}", 0))
+    return int(metrics.get(f"difficulty_count_{d}", 0))
 
 
 def _pick_balanced_from_band(label: str, i: int, metrics: dict) -> int:
@@ -597,7 +597,7 @@ async def _generate_tf_with_target(
 
             if _tf_answer_matches(target, parsed):
                 parsed["tf_target"] = target
-                parsed["difficult"] = int(d)
+                parsed["difficulty"] = int(d)
 
                 if _is_negative_sentence(parsed.get("question", "")):
                     _m_inc(metrics, "tf_negative_count")
@@ -845,7 +845,7 @@ async def generate_one_question(
             out = await _generate_tf_with_target(
                 client=client,
                 paragraph=paragraph,
-                difficulty_setting=d,
+                difficulty=d,
                 question_index=(tf_index if tf_index is not None else question_index),
                 metrics=metrics
             )
@@ -945,8 +945,6 @@ async def generate_quiz(
         "skip_too_similar": 0,
     }
 
-    metrics["preprocessing_selected_paragraphs"] = len(paragraphs)
-
     type_plan = _build_type_plan(mcq_count, tf_count, fill_count)
 
     seen_question_sigs = set()
@@ -1035,7 +1033,7 @@ async def generate_quiz(
                     dd = None
 
                 if dd in (1, 2, 3, 4, 5):
-                    metrics[f"difficulty_count{dd}"] = int(metrics.get(f"difficulty_count{dd}", 0)) + 1
+                    metrics[f"difficulty_count_{dd}"] = int(metrics.get(f"difficulty_count_{dd}", 0)) + 1
 
                 seen_question_sigs.add(q_sig)
                 seen_question_norms.append(q_norm)
