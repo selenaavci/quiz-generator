@@ -548,7 +548,7 @@ def _tf_answer_matches(target: str, parsed: dict) -> bool:
 async def _generate_tf_with_target(
     client: MistralClient,
     paragraph: str,
-    difficulty_setting: Union[int, str],
+    difficulty: int,
     question_index: int,
     metrics: dict
 ) -> dict:
