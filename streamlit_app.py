@@ -166,7 +166,7 @@ with st.expander("📦 Excel Metadata (opsiyonel)"):
     egitim = st.text_input("Eğitim", value="")
     konu = st.text_input("Konu", value="")
     amac = st.text_input("Amaç", value="")
-    hazirlayan = st.text_input("Hazırlayan", value="OdeaMind") 
+    hazirlayan = st.text_input("Hazırlayan", value="egitim.yonetici") 
 
 # ---------------- Validations ----------------
 if uploaded is None:
