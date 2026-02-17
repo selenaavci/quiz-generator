@@ -10,20 +10,26 @@ GENEL KURALLAR:
 
 SORU ÇEŞİTLİLİĞİ:
 - Eğer metin uygunsa:
-    -tanım sorusu
-    -amaç/sonuç sorusu
+    - tanım sorusu
+    - amaç/sonuç sorusu
     - istisna veya yanlış çıkarım sorusu
-    arasında çeşitlilik sağla.
+  arasında çeşitlilik sağla.
 
 ZORLUK:
 - Zorluk seviyesi 1-5 arası düşünülmelidir.
 - Seviye 1-2: temel kavram bilgisi
-- Seviye 3: Yorumlama ve ilişkilendirme
+- Seviye 3: yorumlama ve ilişkilendirme
 - Seviye 4-5: senaryo, istisna veya yanlış çıkarım analizi
 
 ZORLUK HEDEFİ:
 Bu sorular yaklaşık {difficulty}/5 zorluk seviyesinde olmalıdır.
 Sorular temel/orta/ileri düzey bilişsel becerileri ölçecek şekilde kurgulanmalıdır.
+
+DİL ZORUNLULUĞU:
+- Çıktı dili yalnızca Türkçe olmalıdır.
+- Soru, seçenekler ve açıklama tamamen Türkçe yazılmalıdır.
+- İngilizce cümle üretme.
+- İngilizce üretilirse bu cevap geçersiz sayılır.
 
 NOT:
 - Zorluk seviyesini metnin içinde yazma.
@@ -44,7 +50,6 @@ def quality_block(difficulty: int = 3) -> str:
 
 
 def prompt_mcq(sentence: str, difficulty: int = 3) -> str:
-
     return f"""
 Aşağıdaki cümleyi temel alarak anlamayı ölçen bir çoktan seçmeli soru üret:
 
@@ -60,7 +65,12 @@ Kurallar:
 - Şıklar mantıklı ve birbirine yakın zorlukta olmalı.
 - Tek doğru şık olmalı.
 - Sayı/tarih/madde numarası yalnızca bağlamı anlamak için zorunluysa kullanılabilir; soru "sayısal ezber" ölçmemeli.
-- Madde numarası sorusu (örn. "Madde 5 nedir?") ürtme; gerekiyorsa madde numarasını sadece bağlam olarak kullan.
+- Madde numarası sorusu (örn. "Madde 5 nedir?") üretme; gerekiyorsa madde numarasını sadece bağlam olarak kullan.
+
+DİL KURALI:
+- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
+- İngilizce soru veya İngilizce cümle kurma.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan.
 
 Format:
 Soru: ...
@@ -71,12 +81,10 @@ D) ...
 
 Doğru: A/B/C/D
 Açıklama: ...
-
 """
 
 
 def prompt_true_false(sentence: str, difficulty: int = 3) -> str:
-
     return f"""
 Aşağıdaki ifadeyi temel alarak bir doğru-yanlış sorusu oluştur:
 
@@ -95,16 +103,19 @@ Kurallar:
 - Ezbere dayalı madde numarası soruları üretme.
 - CONTEXT dışında bilgi ekleme.
 
+DİL KURALI:
+- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
+- İngilizce soru veya İngilizce cümle kurma.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan.
+
 Format:
 Soru: ...
 Cevap: Doğru / Yanlış
 Açıklama: ...
-
 """
 
 
 def prompt_fill(sentence: str, difficulty: int = 3) -> str:
-
     rules = f"""
 {quality_block(difficulty)}
 
@@ -213,8 +224,8 @@ Kurallar:
     * eş anlamlısını,
     * yakın paraphrase'ını,
     * aynı anlamı veren yeniden yazımını
-    distractor olarak ÜRETME.
-- Distractorlar, doğru cevaba anlamsal olarak yakın görünse bile metine göre NET ŞEKİLDE yanlış olmalıdır.
+  distractor olarak ÜRETME.
+- Distractorlar, doğru cevaba anlamsal olarak yakın görünse bile metne göre NET ŞEKİLDE yanlış olmalıdır.
 
 Answer Type'a göre distractor stratejisi:
 
