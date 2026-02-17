@@ -22,7 +22,7 @@ HEADERS = [
     "Hazırlayan"
 ]
 
-DEFAULT_PREPARER = "OdeaMind"
+DEFAULT_PREPARER = "egitim.yonetici"
 LETTER_TO_NUM = {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5}
 DIF_MAP = {"Kolay": 1, "Orta": 3, "Zor": 5}
 
