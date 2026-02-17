@@ -552,7 +552,7 @@ async def _generate_tf_with_target(
     question_index: int,
     metrics: dict
 ) -> dict:
-    d = _difficulty_value(difficulty_setting, question_index)
+    d = _difficulty_value(difficulty, question_index)
     target = _tf_target_answer(question_index)
 
     last_err = None
