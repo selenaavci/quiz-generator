@@ -10,26 +10,26 @@ GENEL KURALLAR:
 
 SORU ÇEŞİTLİLİĞİ:
 - Eğer metin uygunsa:
-    - tanım sorusu
-    - amaç/sonuç sorusu
+    -tanım sorusu
+    -amaç/sonuç sorusu
     - istisna veya yanlış çıkarım sorusu
-  arasında çeşitlilik sağla.
+    arasında çeşitlilik sağla.
 
 ZORLUK:
 - Zorluk seviyesi 1-5 arası düşünülmelidir.
 - Seviye 1-2: temel kavram bilgisi
-- Seviye 3: yorumlama ve ilişkilendirme
+- Seviye 3: Yorumlama ve ilişkilendirme
 - Seviye 4-5: senaryo, istisna veya yanlış çıkarım analizi
 
 ZORLUK HEDEFİ:
 Bu sorular yaklaşık {difficulty}/5 zorluk seviyesinde olmalıdır.
 Sorular temel/orta/ileri düzey bilişsel becerileri ölçecek şekilde kurgulanmalıdır.
 
-DİL ZORUNLULUĞU:
+DİL HEDEFİ:
 - Çıktı dili yalnızca Türkçe olmalıdır.
-- Soru, seçenekler ve açıklama tamamen Türkçe yazılmalıdır.
-- İngilizce cümle üretme.
-- İngilizce üretilirse bu cevap geçersiz sayılır.
+- Soru seçenekler açıklama tamamen Türkçe olmalıdır.
+- İngilizce soru üretme veya İngilizce cümle kurma.
+- İngilizce üretilirse bu soru veya cevap geçersiz sayılır. 
 
 NOT:
 - Zorluk seviyesini metnin içinde yazma.
@@ -50,6 +50,7 @@ def quality_block(difficulty: int = 3) -> str:
 
 
 def prompt_mcq(sentence: str, difficulty: int = 3) -> str:
+
     return f"""
 Aşağıdaki cümleyi temel alarak anlamayı ölçen bir çoktan seçmeli soru üret:
 
@@ -65,12 +66,12 @@ Kurallar:
 - Şıklar mantıklı ve birbirine yakın zorlukta olmalı.
 - Tek doğru şık olmalı.
 - Sayı/tarih/madde numarası yalnızca bağlamı anlamak için zorunluysa kullanılabilir; soru "sayısal ezber" ölçmemeli.
-- Madde numarası sorusu (örn. "Madde 5 nedir?") üretme; gerekiyorsa madde numarasını sadece bağlam olarak kullan.
+- Madde numarası sorusu (örn. "Madde 5 nedir?") ürtme; gerekiyorsa madde numarasını sadece bağlam olarak kullan.
 
-DİL KURALI:
+DİL HEDEFİ:
 - Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
 - İngilizce soru veya İngilizce cümle kurma.
-- Teknik terimler gerekiyorsa Türkçe karşılığını kullan.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
 
 Format:
 Soru: ...
@@ -81,10 +82,12 @@ D) ...
 
 Doğru: A/B/C/D
 Açıklama: ...
+
 """
 
 
 def prompt_true_false(sentence: str, difficulty: int = 3) -> str:
+
     return f"""
 Aşağıdaki ifadeyi temel alarak bir doğru-yanlış sorusu oluştur:
 
@@ -103,19 +106,16 @@ Kurallar:
 - Ezbere dayalı madde numarası soruları üretme.
 - CONTEXT dışında bilgi ekleme.
 
-DİL KURALI:
-- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
-- İngilizce soru veya İngilizce cümle kurma.
-- Teknik terimler gerekiyorsa Türkçe karşılığını kullan.
-
 Format:
 Soru: ...
 Cevap: Doğru / Yanlış
 Açıklama: ...
+
 """
 
 
 def prompt_fill(sentence: str, difficulty: int = 3) -> str:
+
     rules = f"""
 {quality_block(difficulty)}
 
@@ -136,6 +136,11 @@ Kurallar:
     }}
 - "question" alanında orijinal cümle korunur; sadece seçilen kavram yerine _______ yazılır.
 - "explanation" kısa (1-2 cümle) olmalı ve neden doğru olduğunu açıklamalı.
+
+DİL HEDEFİ:
+- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
+- İngilizce soru veya İngilizce cümle kurma.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
 """
 
     few_shot = """
@@ -196,6 +201,12 @@ JSON:
   "rationale": "...",
   "answer_type": "definition"
 }}
+
+DİL HEDEFİ:
+- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
+- İngilizce soru veya İngilizce cümle kurma.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
+
 """.strip()
 
 
@@ -224,8 +235,13 @@ Kurallar:
     * eş anlamlısını,
     * yakın paraphrase'ını,
     * aynı anlamı veren yeniden yazımını
-  distractor olarak ÜRETME.
-- Distractorlar, doğru cevaba anlamsal olarak yakın görünse bile metne göre NET ŞEKİLDE yanlış olmalıdır.
+    distractor olarak ÜRETME.
+- Distractorlar, doğru cevaba anlamsal olarak yakın görünse bile metine göre NET ŞEKİLDE yanlış olmalıdır.
+
+DİL HEDEFİ:
+- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
+- İngilizce soru veya İngilizce cümle kurma.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
 
 Answer Type'a göre distractor stratejisi:
 
@@ -266,6 +282,12 @@ JSON:
 {{
   "distractors": ["...", "...", "..."]
 }}
+
+DİL HEDEFİ:
+- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
+- İngilizce soru veya İngilizce cümle kurma.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
+
 """.strip()
 
 
@@ -299,4 +321,75 @@ JSON:
     "notes": "..."
   }}
 }}
+
+DİL HEDEFİ:
+- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
+- İngilizce soru veya İngilizce cümle kurma.
+- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
+
+""".strip()
+
+
+def prompt_open_ended(context: str, difficulty: int = 3) -> str:
+    d = int(difficulty) if str(difficulty).strip().isdigit() else 3
+    if d < 1: d = 1
+    if d > 5: d = 5
+
+    if d <= 2:
+        style = """
+Soru Tipi (Zorluk 1-2): Tanım / amaç odaklı, kısa ve net.
+- "Nedir?" / "Ne amaçla kullanılır?" gibi.
+- Tek kavramı ölç.
+"""
+    elif d == 3:
+        style = """
+Soru Tipi (Zorluk 3): Açıklama / ilişkilendirme.
+- Bir kavramı bağlamıyla açıklat.
+- Kısa kapsamlı ama dar bir soru sor.
+"""
+    elif d == 4:
+        style = """
+Soru Tipi (Zorluk 4): Kısa senaryo / uygulama.
+- Context içindeki kurala uygun kısa bir senaryo kurgula.
+- "Bu durumda ne yapılmalı / hangi ilke uygulanır?" gibi.
+"""
+    else:
+        style = """
+Soru Tipi (Zorluk 5): Analiz / istisna / yanlış çıkarım yakalama.
+- Context içindeki istisna/koşulları ölç.
+- Bir yanlış çıkarımı fark ettir veya risk/sonuç analizi yaptır.
+"""
+
+    rules = f"""
+{quality_block(d)}
+
+Kurallar:
+- YALNIZCA aşağıdaki metne dayan.
+- Metin dışı bilgi EKLEME (uydurma yok).
+- Soru "genel" olmayacak. (Örn: "KVKK'yı açıklayınız" YASAK)
+- Soru tek ve net olmalı.
+- Beklenen cevap için 3-6 adet anahtar kelime/ifade üret:
+  * Her biri 1-3 kelime olsun
+  * Mümkünse metinde geçen ifadeler olsun
+  * Stopword/generic kelimeler ("şey", "durum", "süreç", "yöntem") kullanma
+- Çıktı SADECE JSON olacak. Markdown / code fence / ekstra metin YASAK.
+
+JSON Şeması:
+{{
+  "type": "open",
+  "question": "...?",
+  "keywords": ["...", "...", "..."],
+  "explanation": "Kısa (1 cümle) not (opsiyonel)"
+}}
+"""
+
+    return f"""
+Metin:
+\"\"\"{context}\"\"\"
+
+{style}
+
+{rules}
+
+SADECE JSON ÇIKTI ÜRET.
 """.strip()

@@ -148,14 +148,13 @@ def _error_row(item: Dict[str, Any], meta: ExcelMeta) -> List[Any]:
 
     msg = f"[ERROR] {qtype}: {err}"
     if raw_prev:
-        # keep it readable in Excel
         msg += f" | raw: {raw_prev[:250]}"
 
     return [
-        msg,      
-        0,        # Seçenek Sayısı
-        "", "", "", "", "",   # Seçenek 1-5
-        "",       # Doğru Seçenek
+        msg,
+        0,
+        "", "", "", "", "",
+        "",
         _difficulty(item, meta),
         meta.departman,
         meta.egitim,
@@ -169,7 +168,6 @@ def quiz_to_excel_rows(quiz: List[Dict[str, Any]], meta: ExcelMeta) -> List[List
     rows: List[List[Any]] = []
 
     for item in quiz:
-        # NEW: if generation failed, write an explicit error row (no more None)
         if isinstance(item, dict) and item.get("error"):
             rows.append(_error_row(item, meta))
             continue
@@ -193,6 +191,10 @@ def quiz_to_excel_rows(quiz: List[Dict[str, Any]], meta: ExcelMeta) -> List[List
             secenek_sayisi = 1 if ans else 0
             opt1, opt2, opt3, opt4, opt5 = ans, "", "", "", ""
 
+        elif qtype in ("open", "open_ended", "oe"):
+            secenek_sayisi = 0
+            opt1 = opt2 = opt3 = opt4 = opt5 = ""
+
         else:
             secenek_sayisi = 0
             opt1 = opt2 = opt3 = opt4 = opt5 = ""
@@ -201,6 +203,12 @@ def quiz_to_excel_rows(quiz: List[Dict[str, Any]], meta: ExcelMeta) -> List[List
             item,
             len(options) if qtype in ("mcq", "multiple_choice") else secenek_sayisi
         )
+
+        if qtype in ("open", "open_ended", "oe"):
+            kws = item.get("keywords") or []
+            kws = [str(x).strip() for x in kws if str(x).strip()]
+            dogru = "; ".join(kws)
+
         zorluk = _difficulty(item, meta)
 
         row = [

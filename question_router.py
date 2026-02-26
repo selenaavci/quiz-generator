@@ -4,26 +4,28 @@ import string
 import hashlib
 from typing import List, Tuple, Dict, Any, Union
 
-from prompts import (
+from ai.prompts import (
     prompt_mcq,
     prompt_true_false,
     prompt_fill,
     prompt_mcq_stage1_core,
     prompt_mcq_stage2_distractors,
     prompt_mcq_stage3_verify,
+    prompt_open_ended,
 )
-from parser import (
+from ai.parser import (
     parse_mcq,
     parse_true_false,
     parse_fill,
     parse_mcq_stage1,
     parse_mcq_stage2,
     parse_mcq_stage3,
+    parse_open_ended,
 )
-from oss_client import MistralClient
+from ai.oss_client import MistralClient
 
 try:
-    from paragraph_selector import pick_fill_sentence
+    from logic.paragraph_selector import pick_fill_sentence
 except Exception:
     pick_fill_sentence = None
 
@@ -191,6 +193,19 @@ def _is_negative_sentence(text: str) -> bool:
     return bool(_NEG_PAT.search(text or ""))
 
 
+def _is_probablt_english(text: str) -> bool:
+    if not text:
+        return False
+
+    low = f" {text.lower()} "
+
+    english_markers = [
+        " the ", " is ", " are ", " of ", " in ", " and ", " which ", " what ", " how ", " when "
+    ]
+
+    return any(marker in low for marker in english_markers)
+
+
 # ============================================================
 # Adaptive routing (chunk -> type suitability scoring)
 # ============================================================
@@ -266,6 +281,14 @@ def _score_paragraph_for_type(paragraph: str, qtype: str) -> float:
         if qtype == "fill":
             score -= 1.5
 
+    if qtype == "open":
+        if any(x in low for x in ["örnek", "senaryo", "durum", "uygulama", "istisna", "koşul", "şart", "halinde", "ancak", "aksi halde"]):
+            score += 3.0
+        if wc < 20:
+            score -= 2.0
+        if listy:
+            score -= 1.0
+
     # very long paragraphs
     if wc > 220:
         if qtype == "mcq":
@@ -278,32 +301,29 @@ def _score_paragraph_for_type(paragraph: str, qtype: str) -> float:
     return score
 
 
-def _build_type_plan(mcq_count: int, tf_count: int, fill_count: int) -> List[str]:
-    """
-    Build a stable interleaving (avoid long blocks of same type).
-    """
-    if mcq_count < 0 or tf_count < 0 or fill_count < 0:
+def _build_type_plan(mcq_count: int, tf_count: int, fill_count: int, open_count: int = 0) -> List[str]:
+    if mcq_count < 0 or tf_count < 0 or fill_count < 0 or open_count < 0:
         raise ValueError("Soru sayıları negatif olamaz.")
 
-    types = (["mcq"] * mcq_count) + (["tf"] * tf_count) + (["fill"] * fill_count)
+    types = (["mcq"] * mcq_count) + (["tf"] * tf_count) + (["fill"] * fill_count) + (["open"] * open_count)
     if not types:
         return []
 
-    counts = {"mcq": mcq_count, "tf": tf_count, "fill": fill_count}
-    order: List[str] = []
+    counts = {"mcq": mcq_count, "tf": tf_count, "fill": fill_count, "open": open_count}
+    priority = {"mcq": 3, "tf": 2, "fill": 1, "open": 0}  
 
+    order: List[str] = []
     while sum(counts.values()) > 0:
-        t = max(["mcq", "tf", "fill"], key=lambda k: (counts[k], {"mcq": 2, "tf": 1, "fill": 0}[k]))
+        t = max(counts.keys(), key=lambda k: (counts[k], priority[k]))
         if counts[t] > 0:
             order.append(t)
             counts[t] -= 1
         else:
-            for k in ["mcq", "tf", "fill"]:
+            for k in ["mcq", "tf", "fill", "open"]:
                 if counts[k] > 0:
                     order.append(k)
                     counts[k] -= 1
                     break
-
     return order
 
 
@@ -808,6 +828,142 @@ async def _generate_fill_with_retry(
 
     raise ValueError(f"Fill üretimi başarısız (retry sonrası): {last_err} | raw_preview={last_raw_preview}")
 
+# ============================================================
+# Open Ended
+# ============================================================
+
+_GENERIC_Q_PAT = re.compile(r"\b(açıklayınız|yorumlayınız|anlatınız|detaylandırınız|kısaca açıklayınız)\b", re.IGNORECASE)
+
+
+def _open_question_too_generic(q: str) -> bool:
+    s = (q or "").strip()
+    if len(s.split()) < 6:
+        return True
+    if _GENERIC_Q_PAT.search(s):
+        return True
+    return False
+
+
+def _keywords_quality_ok(keywords: List[str]) -> bool:
+    bad = {"şey", "durum", "süreç", "yöntem", "bilgi", "veri", "sistem", "uygulama", "konu", "işlem", "amaç", "kural", "madde"}
+    for kw in keywords:
+        k = (kw or "").strip().lower()
+        if not k:
+            return False
+        if len(k) <= 2:
+            return False
+        if k in bad:
+            return False
+        if len(k.split()) > 3:
+            return False
+    return True
+
+
+def _keyword_coverage_ratio(keywords: List[str], context: str) -> float:
+    c = (context or "").lower()
+    if not keywords:
+        return 0.0
+    hit = 0
+    for kw in keywords:
+        k = (kw or "").strip().lower()
+        if not k:
+            continue
+        if k in c:
+            hit += 1
+    return hit / max(len(keywords), 1)
+
+
+async def _generate_open_with_retry(
+    client: MistralClient,
+    paragraph: str,
+    difficulty_setting: Union[int, str],
+    question_index: int,
+    metrics: dict
+) -> dict:
+    _m_inc(metrics, "open_total")
+
+    last_err = None
+    last_raw_preview = None
+
+    # LLM retry
+    for attempt in range(1, 5):
+        try:
+            if attempt > 1:
+                _m_inc(metrics, "open_retry")
+
+            d = _difficulty_value(difficulty_setting, question_index * 10 + attempt)
+            p = prompt_open_ended(paragraph, difficulty=d)
+
+            raw = await _llm_generate(
+                client, metrics,
+                messages=[{"role": "user", "content": p}],
+                temperature=0.25,
+                max_tokens=420,
+            )
+            last_raw_preview = (raw or "")[:400]
+
+            parsed = parse_open_ended(raw)
+            q_text = str(parsed.get("question", "")).strip()
+            kws = parsed.get("keywords") or []
+
+            if _open_question_too_generic(q_text):
+                _m_inc(metrics, "open_guard_generic")
+                last_err = ValueError("open generic question guard")
+                continue
+
+            if _has_absolute_language(q_text) and not _absolute_supported_by_context(q_text, paragraph):
+                _m_inc(metrics, "open_guard_absolute")
+                last_err = ValueError("open absolute language guard")
+                continue
+
+            if not _keywords_quality_ok(kws):
+                _m_inc(metrics, "open_keyword_rejected")
+                last_err = ValueError("open keyword quality guard")
+                continue
+
+            cov = _keyword_coverage_ratio(kws, paragraph)
+            if cov < 0.60:
+                _m_inc(metrics, "open_guard_leakage")
+                last_err = ValueError(f"open leakage guard (cov={cov})")
+                continue
+
+            parsed["difficulty"] = int(d)
+            _m_inc(metrics, "open_success")
+            return parsed
+
+        except Exception as e:
+            last_err = e
+
+    _m_inc(metrics, "open_fallback_used")
+    _m_inc(metrics, "open_fail")
+
+    base = " ".join((paragraph or "").strip().split())
+    base_short = base[:240].strip()
+
+    fallback_question = (
+        "Aşağıdaki ifadeye dayanarak, metindeki temel kavramı ve bunun amacını kendi cümlelerinizle açıklayınız: "
+        + f"\"{base_short}\""
+    )
+
+    toks = [t.strip(".,;:()[]{}\"'“”’‘").lower() for t in base.split()]
+    toks = [t for t in toks if len(t) >= 6]
+    uniq = []
+    for t in toks:
+        if t and t not in uniq:
+            uniq.append(t)
+        if len(uniq) >= 4:
+            break
+    if len(uniq) < 3:
+        uniq = (uniq + ["kavram", "amaç", "kapsam"])[:3]
+
+    return {
+        "type": "open",
+        "question": fallback_question,
+        "keywords": uniq[:6],
+        "explanation": "",
+        "difficulty": 3,
+    }
+
 
 # ============================================================
 # Generation (single question)
@@ -871,6 +1027,15 @@ async def generate_one_question(
             _m_inc(metrics, "fill_fail")
             raise
 
+    if qtype == "open":
+        return await _generate_open_with_retry(
+            client=client,
+            paragraph=paragraph,
+            difficulty_setting=d,
+            question_index=question_index,
+            metrics=metrics
+        )
+
     raise ValueError(f"Unknown question type: {qtype}")
 
 
@@ -883,6 +1048,7 @@ async def generate_quiz(
     mcq_count: int,
     tf_count: int,
     fill_count: int,
+    open_count: int = 0,
     difficulty: Union[int, str] = "Orta",
 ) -> List[Dict[str, Any]]:
 
@@ -902,6 +1068,8 @@ async def generate_quiz(
         "llm_call_count": 0,
         "question_generation_retry_count": 0,
         "salvage_triggered_count": 0,
+
+        "language_guard_triggered": 0,
 
         "difficulty_count_1": 0,
         "difficulty_count_2": 0,
@@ -932,6 +1100,16 @@ async def generate_quiz(
         "fill_quality_fail": 0,
         "fill_generic_answer_rejected": 0,
 
+        "open_total": 0,
+        "open_success": 0,
+        "open_fail": 0,
+        "open_retry": 0,
+        "open_guard_generic": 0,
+        "open_guard_leakage": 0,
+        "open_guard_absolute": 0,
+        "open_keyword_rejected": 0,
+        "open_fallback_used": 0,
+
         "coverage_total_sources": 0,
         "coverage_unique_sources_used": 0,
         "coverage_ratio": 0.0,
@@ -945,7 +1123,7 @@ async def generate_quiz(
         "skip_too_similar": 0,
     }
 
-    type_plan = _build_type_plan(mcq_count, tf_count, fill_count)
+    type_plan = _build_type_plan(mcq_count, tf_count, fill_count, open_count)
 
     seen_question_sigs = set()
     seen_question_norms: List[str] = []
