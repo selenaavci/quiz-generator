@@ -366,6 +366,9 @@ Kurallar:
   * Mümkünse metinde geçen ifadeler olsun
   * Stopword/generic kelimeler ("şey", "durum", "süreç", "yöntem") kullanma
 - Çıktı SADECE JSON olacak. Markdown / code fence / ekstra metin YASAK.
+- "keywords" SADECE metinde birebir geçen (aynı yazımla) kavram/terimler olacak.
+- Aşağıdaki kelimeler keyword OLAMAZ: farklı, bunlar, olabilecek, şekilde, sayıda, gibi, bazı, çeşitli, bankada, kurumda
+- Eğer metinde birebir geçen uygun kavram bulamazsan keywords üretme; bunun yerine soruyu yeniden kurgula.
 
 JSON Şeması:
 {{
