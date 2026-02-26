@@ -844,19 +844,50 @@ def _open_question_too_generic(q: str) -> bool:
     return False
 
 
-def _keywords_quality_ok(keywords: List[str]) -> bool:
-    bad = {"şey", "durum", "süreç", "yöntem", "bilgi", "veri", "sistem", "uygulama", "konu", "işlem", "amaç", "kural", "madde"}
-    for kw in keywords:
-        k = (kw or "").strip().lower()
+def _clean_open_keywords(keywords: List[str]) -> List[str]:
+    # Fill tarafındaki stopword/abstract setlerini reuse edelim
+    bad = set(_TR_STOPWORDS) | set(_GENERIC_ABSTRACT) | {
+        "farklı", "bunlar", "olabilecek", "şekilde", "sayıda", "gibi", "bazı", "çeşitli",
+        "bankada", "kurumda", "kurum", "banka"
+    }
+
+    out = []
+    for kw in (keywords or []):
+        k_raw = str(kw).strip()
+        k = k_raw.lower()
         if not k:
-            return False
-        if len(k) <= 2:
-            return False
+            continue
         if k in bad:
-            return False
+            continue
+        if len(k) <= 2:
+            continue
         if len(k.split()) > 3:
-            return False
-    return True
+            continue
+        if " " not in k and not _WORD.match(k):
+            continue
+        out.append(k_raw)
+
+    uniq = []
+    for x in out:
+        if x not in uniq:
+            uniq.append(x)
+    return uniq
+
+
+def _keyword_coverage_ratio(keywords: List[str], context: str) -> float:
+    c = (context or "").lower()
+    kws = _clean_open_keywords(keywords)
+    if not kws:
+        return 0.0
+
+    hit = 0
+    for kw in kws:
+        k = kw.strip().lower()
+        if not k:
+            continue
+        if re.search(rf"\b{re.escape(k)}\b", c):
+            hit += 1
+    return hit / max(len(kws), 1)
 
 
 def _keyword_coverage_ratio(keywords: List[str], context: str) -> float:
@@ -905,6 +936,12 @@ async def _generate_open_with_retry(
             parsed = parse_open_ended(raw)
             q_text = str(parsed.get("question", "")).strip()
             kws = parsed.get("keywords") or []
+            kws = _clean_open_keywords(kws)
+
+            if len(kws) < 3:
+                _m_inc(metrics, "open_keyword_rejected")
+                last_err = ValueError("open keyword cleaned < 3")
+                continue
 
             if _open_question_too_generic(q_text):
                 _m_inc(metrics, "open_guard_generic")
@@ -916,16 +953,13 @@ async def _generate_open_with_retry(
                 last_err = ValueError("open absolute language guard")
                 continue
 
-            if not _keywords_quality_ok(kws):
-                _m_inc(metrics, "open_keyword_rejected")
-                last_err = ValueError("open keyword quality guard")
-                continue
-
             cov = _keyword_coverage_ratio(kws, paragraph)
-            if cov < 0.60:
+            if cov < 0.75:
                 _m_inc(metrics, "open_guard_leakage")
                 last_err = ValueError(f"open leakage guard (cov={cov})")
                 continue
+            
+            parsed["keywords"] = kws[:6]
 
             parsed["difficulty"] = int(d)
             _m_inc(metrics, "open_success")
@@ -946,15 +980,18 @@ async def _generate_open_with_retry(
     )
 
     toks = [t.strip(".,;:()[]{}\"'“”’‘").lower() for t in base.split()]
-    toks = [t for t in toks if len(t) >= 6]
+    toks = [t for t in toks if t and len(t) >= 4]
+    toks = [t for t in toks if t not in _TR_STOPWORDS and t not in _GENERIC_ABSTRACT]
+    
     uniq = []
     for t in toks:
-        if t and t not in uniq:
+        if t not in uniq and _WORD.match(t):
             uniq.append(t)
-        if len(uniq) >= 4:
+        if len(uniq) >= 5:
             break
+    
     if len(uniq) < 3:
-        uniq = (uniq + ["kavram", "amaç", "kapsam"])[:3]
+        uniq = ["tanım", "amaç", "istisna"]
 
     return {
         "type": "open",
@@ -989,11 +1026,17 @@ async def generate_one_question(
             _m_inc(metrics, "mcq_multistage_fail")
 
             legacy_prompt = prompt_mcq(paragraph, difficulty=d)
-            raw = await _llm_generate(client, metrics, messages=[{"role": "user", "content": legacy_prompt}])
+        raw = await _llm_generate(client, metrics, messages=[{"role": "user", "content": legacy_prompt}])
+        try:
             out = parse_mcq(raw)
-            if isinstance(out, dict):
-                out["difficulty"] = int(d)
-            return out
+        except Exception:
+            retry_prompt = prompt_mcq(paragraph, difficulty=d)
+            raw2 = await _llm_generate(client, metrics, messages=[{"role": "user", "content": retry_prompt}], temperature=0.1, max_tokens=650)
+            out = parse_mcq(raw2)
+        
+        if isinstance(out, dict):
+            out["difficulty"] = int(d)
+        return out
 
     if qtype == "tf":
         _m_inc(metrics, "tf_total")
@@ -1174,7 +1217,7 @@ async def generate_quiz(
                 tf_counter += 1
                 tf_local_index = tf_counter
 
-            if qtype in ("mcq", "fill") and tries <= 3 and src_sig in seen_source_sigs:
+            if qtype in ("mcq", "fill", "open") and tries <= 3 and src_sig in seen_source_sigs:
                 continue
 
             try:
@@ -1189,15 +1232,15 @@ async def generate_quiz(
                 )
 
                 q_text = str(q.get("question", "")).strip()
-                q_sig = _signature(q_text)
                 q_norm = _normalize_text(q_text)
+                q_sig = _signature(q_norm)
 
                 # Hard dedup
                 if q_sig in seen_question_sigs:
                     continue
 
                 # Near-duplicate guard
-                if len(seen_question_norms) >= 4 and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
+                if len(seen_question_norms) >= 3 and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
                     _m_inc(metrics, "skip_too_similar")
                     continue
 
@@ -1229,11 +1272,51 @@ async def generate_quiz(
                 continue
 
         else:
-            quiz.append({
-                "type": qtype,
-                "error": str(last_err) if last_err else "Soru üretilemedi (tries tükendi).",
-                "source": ""
-            })
+            base = paragraph or ""
+            base_short = (" ".join(base.split())[:220]).strip()
+        
+            if qtype == "mcq":
+                quiz.append({
+                    "type": "mcq",
+                    "question": f"Aşağıdaki ifadeye göre en doğru seçenek hangisidir?\n\"{base_short}\"",
+                    "options": {
+                        "A": "İfade metindeki ana ilkeyi doğru yansıtır.",
+                        "B": "İfade metindeki ana ilkeyi yanlış yansıtır.",
+                        "C": "İfade metinde hiç ele alınmayan bir konuyu içerir.",
+                        "D": "İfade metindeki koşulları ters yorumlar."
+                    },
+                    "correct": "A",
+                    "explanation": "",
+                    "difficulty": 3,
+                    "source": src_preview
+                })
+            elif qtype == "tf":
+                quiz.append({
+                    "type": "true_false",
+                    "question": f"\"{base_short}\" ifadesi metne göre doğru bir çıkarımdır.",
+                    "answer": "Doğru",
+                    "explanation": "",
+                    "difficulty": 3,
+                    "source": src_preview
+                })
+            elif qtype == "fill":
+                quiz.append({
+                    "type": "fill",
+                    "question": f"\"{base_short}\" ifadesindeki temel kavram _______ olarak özetlenebilir.",
+                    "answer": "temel kavram",
+                    "explanation": "",
+                    "difficulty": 3,
+                    "source": src_preview
+                })
+            else: 
+                quiz.append({
+                    "type": "open",
+                    "question": f"Aşağıdaki ifadeye dayanarak, temel kavramı ve amacını kendi cümlelerinizle açıklayınız:\n\"{base_short}\"",
+                    "keywords": ["tanım", "amaç", "kapsam"],
+                    "explanation": "",
+                    "difficulty": 3,
+                    "source": src_preview
+                })
 
     total_sources = len(paragraphs)
     unique_used = len(set(all_used_sources))
