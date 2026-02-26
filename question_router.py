@@ -4,7 +4,7 @@ import string
 import hashlib
 from typing import List, Tuple, Dict, Any, Union
 
-from ai.prompts import (
+from prompts import (
     prompt_mcq,
     prompt_true_false,
     prompt_fill,
@@ -13,7 +13,7 @@ from ai.prompts import (
     prompt_mcq_stage3_verify,
     prompt_open_ended,
 )
-from ai.parser import (
+from parser import (
     parse_mcq,
     parse_true_false,
     parse_fill,
@@ -22,10 +22,10 @@ from ai.parser import (
     parse_mcq_stage3,
     parse_open_ended,
 )
-from ai.oss_client import MistralClient
+from oss_client import MistralClient
 
 try:
-    from logic.paragraph_selector import pick_fill_sentence
+    from paragraph_selector import pick_fill_sentence
 except Exception:
     pick_fill_sentence = None
 
