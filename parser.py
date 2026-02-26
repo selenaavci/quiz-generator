@@ -35,43 +35,66 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
 
 def parse_mcq(text: str) -> dict:
     """
-    Legacy format:
-    Soru: ...
-    A) ...
-    ...
-    Doğru: A
-    Açıklama: ...
+    Prefer JSON:
+    {
+      "type": "mcq",
+      "question": "...?",
+      "options": {"A":"...","B":"...","C":"...","D":"..."},
+      "correct": "A",
+      "explanation": "..."
+    }
+    Legacy fallback supported (Soru/A)/A./A- ; Doğru/Doğru cevap)
     """
     j = _extract_json(text)
-    if j and ("question" in j) and (("options" in j) or ("correct" in j)):
-        j.setdefault("type", "mcq")
-        return j
+    if j and isinstance(j, dict):
+        # normalize minimal schema
+        if "question" in j and ("options" in j) and ("correct" in j):
+            j.setdefault("type", "mcq")
+            return j
 
-    try:
-        question = re.search(r"Soru:\s*(.+)", text).group(1).strip()
+    if not text or not isinstance(text, str):
+        raise ValueError("MCQ parse edilemedi: boş çıktı")
 
-        options = {
-            "A": re.search(r"A\)\s*(.+)", text).group(1).strip(),
-            "B": re.search(r"B\)\s*(.+)", text).group(1).strip(),
-            "C": re.search(r"C\)\s*(.+)", text).group(1).strip(),
-            "D": re.search(r"D\)\s*(.+)", text).group(1).strip(),
-        }
+    
+    def pick_line(prefixes):
+        for ln in text.splitlines():
+            s = ln.strip()
+            for p in prefixes:
+                if s.lower().startswith(p.lower()):
+                    if ":" in s:
+                        return s.split(":", 1)[1].strip()
+                    return s[len(p):].strip()
+        return None
 
-        correct = re.search(r"Doğru:\s*([A-D])", text).group(1).strip()
+    question = pick_line(["Soru", "Soru:", "Question", "Question:"])
+    if not question:
+        m = re.search(r"Soru\s*[:\-]\s*(.+)", text)
+        question = m.group(1).strip() if m else None
 
-        explanation_match = re.search(r"Açıklama:\s*(.+)", text, re.DOTALL)
-        explanation = explanation_match.group(1).strip() if explanation_match else ""
+    def opt(letter):
+        m = re.search(rf"^{letter}\s*[\)\.\-\:]\s*(.+)$", text, re.MULTILINE)
+        return m.group(1).strip() if m else None
 
-        return {
-            "type": "mcq",
-            "question": question,
-            "options": options,
-            "correct": correct,
-            "explanation": explanation
-        }
+    options = {"A": opt("A"), "B": opt("B"), "C": opt("C"), "D": opt("D")}
+    if not all(options.values()):
+        raise ValueError(f"MCQ parse edilemedi: şıklar eksik. İlk 200 char: {text[:200]}")
 
-    except Exception as e:
-        raise ValueError(f"MCQ parse edilemedi: {e}")
+    m = re.search(r"(Doğru|Doğru\s*cevap)\s*[:\-]\s*([A-D])", text, re.IGNORECASE)
+    correct = m.group(2).strip().upper() if m else None
+
+    explanation_match = re.search(r"(Açıklama|Gerekçe)\s*[:\-]\s*(.+)", text, re.DOTALL | re.IGNORECASE)
+    explanation = explanation_match.group(2).strip() if explanation_match else ""
+
+    if not question or not correct:
+        raise ValueError(f"MCQ parse edilemedi: question/correct yok. İlk 200 char: {text[:200]}")
+
+    return {
+        "type": "mcq",
+        "question": question,
+        "options": options,
+        "correct": correct,
+        "explanation": explanation
+    }
 
 
 def parse_true_false(text: str) -> dict:
