@@ -832,32 +832,22 @@ async def _generate_fill_with_retry(
 # Open Ended
 # ============================================================
 
-_GENERIC_Q_PAT = re.compile(r"\b(açıklayınız|yorumlayınız|anlatınız|detaylandırınız|kısaca açıklayınız)\b", re.IGNORECASE)
+_OPEN_BAD = {
+    "farklı", "bunlar", "olabilecek", "şekilde", "sayıda", "gibi", "bazı", "çeşitli",
+    "şey", "durum", "süreç", "yöntem", "bilgi", "veri", "sistem", "uygulama",
+    "konu", "işlem", "amaç", "kural", "madde", "olan", "olup"
+}
 
-
-def _open_question_too_generic(q: str) -> bool:
-    s = (q or "").strip()
-    if len(s.split()) < 6:
-        return True
-    if _GENERIC_Q_PAT.search(s):
-        return True
-    return False
-
+_WORD = re.compile(r"^[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]+$")
 
 def _clean_open_keywords(keywords: List[str]) -> List[str]:
-    # Fill tarafındaki stopword/abstract setlerini reuse edelim
-    bad = set(_TR_STOPWORDS) | set(_GENERIC_ABSTRACT) | {
-        "farklı", "bunlar", "olabilecek", "şekilde", "sayıda", "gibi", "bazı", "çeşitli",
-        "bankada", "kurumda", "kurum", "banka"
-    }
-
     out = []
     for kw in (keywords or []):
-        k_raw = str(kw).strip()
-        k = k_raw.lower()
+        raw = str(kw).strip()
+        k = raw.lower()
         if not k:
             continue
-        if k in bad:
+        if k in _OPEN_BAD:
             continue
         if len(k) <= 2:
             continue
@@ -865,7 +855,7 @@ def _clean_open_keywords(keywords: List[str]) -> List[str]:
             continue
         if " " not in k and not _WORD.match(k):
             continue
-        out.append(k_raw)
+        out.append(raw)
 
     uniq = []
     for x in out:
@@ -883,25 +873,10 @@ def _keyword_coverage_ratio(keywords: List[str], context: str) -> float:
     hit = 0
     for kw in kws:
         k = kw.strip().lower()
-        if not k:
-            continue
         if re.search(rf"\b{re.escape(k)}\b", c):
             hit += 1
+
     return hit / max(len(kws), 1)
-
-
-def _keyword_coverage_ratio(keywords: List[str], context: str) -> float:
-    c = (context or "").lower()
-    if not keywords:
-        return 0.0
-    hit = 0
-    for kw in keywords:
-        k = (kw or "").strip().lower()
-        if not k:
-            continue
-        if k in c:
-            hit += 1
-    return hit / max(len(keywords), 1)
 
 
 async def _generate_open_with_retry(
@@ -917,7 +892,7 @@ async def _generate_open_with_retry(
     last_raw_preview = None
 
     # LLM retry
-    for attempt in range(1, 5):
+    for attempt in range(1, 7):
         try:
             if attempt > 1:
                 _m_inc(metrics, "open_retry")
