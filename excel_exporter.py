@@ -181,19 +181,35 @@ def quiz_to_excel_rows(quiz: List[Dict[str, Any]], meta: ExcelMeta) -> List[List
             secenek_sayisi = len(options)
             padded = (options + [""] * 5)[:5]
             opt1, opt2, opt3, opt4, opt5 = padded
+            if isinstance(item, dict) and item.get("type") == "error":
+                continue
+            if isinstance(item, dict) and item.get("error"):
+                continue
 
         elif qtype in ("true_false", "tf"):
             secenek_sayisi = 2
             opt1, opt2, opt3, opt4, opt5 = "Doğru", "Yanlış", "", "", ""
+            if isinstance(item, dict) and item.get("type") == "error":
+                continue
+            if isinstance(item, dict) and item.get("error"):
+                continue
 
         elif qtype in ("fill", "blank", "fill_blank"):
             ans = str(item.get("answer", "")).strip()
             secenek_sayisi = 1 if ans else 0
             opt1, opt2, opt3, opt4, opt5 = ans, "", "", "", ""
+            if isinstance(item, dict) and item.get("type") == "error":
+                continue
+            if isinstance(item, dict) and item.get("error"):
+                continue
 
         elif qtype in ("open", "open_ended", "oe"):
             secenek_sayisi = 0
             opt1 = opt2 = opt3 = opt4 = opt5 = ""
+            if isinstance(item, dict) and item.get("type") == "error":
+                continue
+            if isinstance(item, dict) and item.get("error"):
+                continue
 
         else:
             secenek_sayisi = 0
