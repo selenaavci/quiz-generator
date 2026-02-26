@@ -149,7 +149,7 @@ with c2:
 with c3:
     fill_checked = st.checkbox("Boşluk Doldurma (Fill)", value=True)
 with c4:
-    open_checked = st.checkbox("Açık Uçlu (Open-ended)", value=False)
+    open_checked = st.checkbox("Açık Uçlu (Open-ended)", value=True)
 
 mcq_count, tf_count, fill_count, open_count = distribute_total(
     int(total_questions),
