@@ -50,40 +50,33 @@ def quality_block(difficulty: int = 3) -> str:
 
 
 def prompt_mcq(sentence: str, difficulty: int = 3) -> str:
-
     return f"""
-Aşağıdaki cümleyi temel alarak anlamayı ölçen bir çoktan seçmeli soru üret:
+Aşağıdaki metne dayanarak 1 adet çoktan seçmeli soru üret.
 
-Cümle:
-\"{sentence}\"
+Metin:
+\"\"\"{sentence}\"\"\"
 
 {quality_block(difficulty)}
 
 Kurallar:
-- Kavram, ilke, amaç veya sonuç ölç.
-- Ezbere dayalı sayı, tarih, madde numarası sorulmayacak.
-- Soru tam bir cümle olacak.
-- Şıklar mantıklı ve birbirine yakın zorlukta olmalı.
-- Tek doğru şık olmalı.
-- Sayı/tarih/madde numarası yalnızca bağlamı anlamak için zorunluysa kullanılabilir; soru "sayısal ezber" ölçmemeli.
-- Madde numarası sorusu (örn. "Madde 5 nedir?") ürtme; gerekiyorsa madde numarasını sadece bağlam olarak kullan.
+- YALNIZCA metne dayan (uydurma yok).
+- Ezbere dayalı madde numarası / tarih / rakam sorma.
+- Tek doğru seçenek olmalı.
+- Şıklar birbirine yakın zorlukta ve makul olmalı.
+- "Hepsi/Hiçbiri" YASAK.
+- Çıktı SADECE JSON olacak. Markdown / açıklama / ekstra metin YASAK.
 
-DİL HEDEFİ:
-- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
-- İngilizce soru veya İngilizce cümle kurma.
-- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
+JSON Şeması (BİREBİR):
+{{
+  "type": "mcq",
+  "question": "...?",
+  "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
+  "correct": "A",
+  "explanation": "1-2 cümle kısa açıklama"
+}}
 
-Format:
-Soru: ...
-A) ...
-B) ...
-C) ...
-D) ...
-
-Doğru: A/B/C/D
-Açıklama: ...
-
-"""
+SADECE JSON ÇIKTI ÜRET.
+""".strip()
 
 
 def prompt_true_false(sentence: str, difficulty: int = 3) -> str:
