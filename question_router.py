@@ -835,7 +835,8 @@ async def _generate_fill_with_retry(
 _OPEN_BAD = {
     "farklı", "bunlar", "olabilecek", "şekilde", "sayıda", "gibi", "bazı", "çeşitli",
     "şey", "durum", "süreç", "yöntem", "bilgi", "veri", "sistem", "uygulama",
-    "konu", "işlem", "amaç", "kural", "madde", "olan", "olup"
+    "konu", "işlem", "amaç", "kural", "madde", "olan", "olup",
+    "farkli", "sekilde", "sayida", "bazi", "cesitli", "sey", "surec"
 }
 
 _WORD = re.compile(r"^[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]+$")
@@ -956,7 +957,7 @@ async def _generate_open_with_retry(
 
     toks = [t.strip(".,;:()[]{}\"'“”’‘").lower() for t in base.split()]
     toks = [t for t in toks if t and len(t) >= 4]
-    toks = [t for t in toks if t not in _TR_STOPWORDS and t not in _GENERIC_ABSTRACT]
+    toks = [t for t in toks if t not in _TR_STOPWORDS and t not in _GENERIC_ABSTRACT and t not in _OPEN_BAD]
     
     uniq = []
     for t in toks:
@@ -1215,7 +1216,7 @@ async def generate_quiz(
                     continue
 
                 # Near-duplicate guard
-                if len(seen_question_norms) >= 3 and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
+                if len(seen_question_norms) >= 1 and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
                     _m_inc(metrics, "skip_too_similar")
                     continue
 
