@@ -12,6 +12,7 @@ from question_router import generate_quiz
 
 from excel_exporter import ExcelMeta, export_quiz_to_xlsx
 
+
 # Streamlit Secrets -> ENV bridge
 if "LLM_API_KEY" in st.secrets:
     os.environ["LLM_API_KEY"] = st.secrets["LLM_API_KEY"]
@@ -21,7 +22,8 @@ if "LLM_BASE_URL" in st.secrets:
 
 if "LLM_MODEL" in st.secrets:
     os.environ["LLM_MODEL"] = st.secrets["LLM_MODEL"]
-    
+
+
 def run_async(coro):
     """
     Streamlit bazen zaten çalışan bir event-loop içinde çalışabilir.
@@ -43,15 +45,15 @@ def run_async(coro):
 
 
 # ---------------- UI helpers ----------------
-def distribute_total(total: int, enabled: Dict[str, bool]) -> Tuple[int, int, int]:
+def distribute_total(total: int, enabled: Dict[str, bool]) -> Tuple[int, int, int, int]:
     """
     total soru sayısını seçilen tiplere paylaştırır.
-    Öncelik sırası: MCQ -> TF -> FILL (kalanlar bu sırayla dağıtılır).
+    Öncelik sırası: MCQ -> TF -> FILL -> OPEN (kalanlar bu sırayla dağıtılır).
     """
-    order = ["mcq", "tf", "fill"]
+    order = ["mcq", "tf", "fill", "open"]
     selected = [k for k in order if enabled.get(k)]
     if total <= 0 or not selected:
-        return 0, 0, 0
+        return 0, 0, 0, 0
 
     base = total // len(selected)
     rem = total % len(selected)
@@ -63,7 +65,12 @@ def distribute_total(total: int, enabled: Dict[str, bool]) -> Tuple[int, int, in
         counts[k] += 1
         rem -= 1
 
-    return counts.get("mcq", 0), counts.get("tf", 0), counts.get("fill", 0)
+    return (
+        counts.get("mcq", 0),
+        counts.get("tf", 0),
+        counts.get("fill", 0),
+        counts.get("open", 0),
+    )
 
 
 def inject_css():
@@ -134,17 +141,19 @@ total_questions = st.number_input(
     step=1,
 )
 
-c1, c2, c3 = st.columns(3)
+c1, c2, c3, c4 = st.columns(4)
 with c1:
     mcq_checked = st.checkbox("Çoktan Seçmeli (MCQ)", value=True)
 with c2:
     tf_checked = st.checkbox("Doğru / Yanlış (TF)", value=True)
 with c3:
     fill_checked = st.checkbox("Boşluk Doldurma (Fill)", value=True)
+with c4:
+    open_checked = st.checkbox("Açık Uçlu (Open-ended)", value=False)
 
-mcq_count, tf_count, fill_count = distribute_total(
+mcq_count, tf_count, fill_count, open_count = distribute_total(
     int(total_questions),
-    enabled={"mcq": mcq_checked, "tf": tf_checked, "fill": fill_checked},
+    enabled={"mcq": mcq_checked, "tf": tf_checked, "fill": fill_checked, "open": open_checked},
 )
 
 st.markdown(
@@ -153,6 +162,7 @@ st.markdown(
       <div>Dağılım: MCQ <b>{mcq_count}</b></div>
       <div>TF <b>{tf_count}</b></div>
       <div>Fill <b>{fill_count}</b></div>
+      <div>Open <b>{open_count}</b></div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -160,24 +170,24 @@ st.markdown(
 
 st.markdown("<hr class='om-hr' />", unsafe_allow_html=True)
 
-
 with st.expander("📦 Excel Metadata (opsiyonel)"):
     departman = st.text_input("Departman", value="")
     egitim = st.text_input("Eğitim", value="")
     konu = st.text_input("Konu", value="")
     amac = st.text_input("Amaç", value="")
-    hazirlayan = st.text_input("Hazırlayan", value="egitim.yonetici") 
+    hazirlayan = st.text_input("Hazırlayan", value="egitim.yonetici")
+
 
 # ---------------- Validations ----------------
 if uploaded is None:
     st.info("Devam etmek için dosya yükleyin.")
     st.stop()
 
-if not (mcq_checked or tf_checked or fill_checked):
-    st.warning("En az bir soru tipi seçmelisiniz (MCQ / TF / Fill).")
+if not (mcq_checked or tf_checked or fill_checked or open_checked):
+    st.warning("En az bir soru tipi seçmelisiniz (MCQ / TF / Fill / Open).")
     st.stop()
 
-if (mcq_count + tf_count + fill_count) <= 0:
+if (mcq_count + tf_count + fill_count + open_count) <= 0:
     st.warning("Toplam soru sayısı en az 1 olmalı.")
     st.stop()
 
@@ -209,6 +219,7 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                     mcq_count=mcq_count,
                     tf_count=tf_count,
                     fill_count=fill_count,
+                    open_count=open_count,
                     difficulty=difficulty,
                 )
             )
@@ -251,14 +262,22 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                         st.write(f"- **{k}**: {opts[k]}")
                 if q.get("correct") is not None:
                     st.write("**Doğru:**", q.get("correct"))
+
             elif q.get("type") in ("true_false", "tf"):
-                # bazı sürümlerde "answer" ya da "correct" / "label" gelebilir
                 ans = q.get("answer") or q.get("label") or q.get("correct")
                 if ans is not None:
                     st.write("**Cevap:**", ans)
+
             elif q.get("type") == "fill":
                 if q.get("answer") is not None:
                     st.write("**Cevap:**", q.get("answer"))
+
+            elif q.get("type") in ("open", "open_ended", "oe"):
+                kws = q.get("keywords") or []
+                if isinstance(kws, list) and kws:
+                    cleaned = [str(x).strip() for x in kws if str(x).strip()]
+                    if cleaned:
+                        st.write("**Anahtar Kelimeler:**", "; ".join(cleaned))
 
             if q.get("explanation"):
                 st.caption(q["explanation"])
@@ -282,7 +301,7 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
             use_container_width=True,
         )
 
-        # Excel export 
+        # Excel export
         meta = ExcelMeta(
             zorluk_derecesi=difficulty,
             departman=departman,
