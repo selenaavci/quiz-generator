@@ -25,10 +25,6 @@ if "LLM_MODEL" in st.secrets:
 
 
 def run_async(coro):
-    """
-    Streamlit bazen zaten çalışan bir event-loop içinde çalışabilir.
-    Bu helper, her ortamda coroutine'i güvenli şekilde çalıştırır.
-    """
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -46,10 +42,6 @@ def run_async(coro):
 
 # ---------------- UI helpers ----------------
 def distribute_total(total: int, enabled: Dict[str, bool]) -> Tuple[int, int, int, int]:
-    """
-    total soru sayısını seçilen tiplere paylaştırır.
-    Öncelik sırası: MCQ -> TF -> FILL -> OPEN (kalanlar bu sırayla dağıtılır).
-    """
     order = ["mcq", "tf", "fill", "open"]
     selected = [k for k in order if enabled.get(k)]
     if total <= 0 or not selected:
