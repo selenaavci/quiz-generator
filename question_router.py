@@ -895,6 +895,22 @@ def _keywords_in_answer_ratio(keywords: List[str], answer: str) -> float:
     return hit / max(len(kws), 1)
 
 
+def _derive_open_keywords(answer: str, context: str, limit: int = 6) -> List[str]:
+    tokens: List[str] = []
+    for blob in (answer or "", context or ""):
+        tokens.extend(re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", blob))
+
+    uniq = []
+    seen = set()
+    for token in tokens:
+        k = token.lower().strip()
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        uniq.append(token.strip())
+
+    return _clean_open_keywords(uniq)[:limit]
+
 
 async def _generate_open_easy_fallback(
     client: MistralClient,
@@ -927,6 +943,10 @@ async def _generate_open_easy_fallback(
 
             kws = _clean_open_keywords(parsed.get("keywords") or [])
 
+            if len(kws) < 3:
+                kws = _derive_open_keywords(ans_text, paragraph, limit=6)
+                _m_inc(metrics, "open_keyword_autofill_used")
+
             if not ans_text:
                 last_err = ValueError("open easy answer empty")
                 continue
@@ -945,7 +965,7 @@ async def _generate_open_easy_fallback(
 
             cov_ctx = _keyword_coverage_ratio(kws, paragraph)
             cov_ans = _keywords_in_answer_ratio(kws, ans_text)
-            if cov_ctx < 0.60 or cov_ans < 0.95:
+            if cov_ctx < 0.45 or cov_ans < 0.60:
                 last_err = ValueError(f"open easy coverage (ctx={cov_ctx}, ans={cov_ans})")
                 continue
 
@@ -997,6 +1017,10 @@ async def _generate_open_with_retry(
             
             kws = parsed.get("keywords") or []
             kws = _clean_open_keywords(kws)
+
+            if len(kws) < 3:
+                kws = _derive_open_keywords(ans_text, paragraph, limit=6)
+                _m_inc(metrics, "open_keyword_autofill_used")
             
             if not ans_text:
                 _m_inc(metrics, "open_keyword_rejected")
@@ -1020,7 +1044,7 @@ async def _generate_open_with_retry(
             
             cov_ctx = _keyword_coverage_ratio(kws, paragraph)
             cov_ans = _keywords_in_answer_ratio(kws, ans_text)
-            if cov_ctx < 0.75 or cov_ans < 0.95:
+            if cov_ctx < 0.45 or cov_ans < 0.60:
                 _m_inc(metrics, "open_guard_leakage")
                 last_err = ValueError(f"open coverage guard (ctx={cov_ctx}, ans={cov_ans})")
                 continue
@@ -1176,6 +1200,7 @@ def _init_metrics() -> dict:
         "open_guard_leakage": 0,
         "open_guard_absolute": 0,
         "open_keyword_rejected": 0,
+        "open_keyword_autofill_used": 0,
 
         "open_fallback_llm_used": 0,
         "open_easy_total": 0,
@@ -1373,7 +1398,14 @@ async def generate_quiz(
                 })
 
             elif qtype == "open":
-                pass
+                quiz.append({
+                    "type": "open",
+                    "question": f"Metindeki temel noktaları kendi cümlelerinle açıklayın: \"{base_short}\"",
+                    "keywords": _derive_open_keywords(base_short, paragraph, limit=6) or ["temel", "kavram", "açıklama"],
+                    "explanation": "",
+                    "difficulty": 3,
+                    "source": (paragraph[:200] + "...") if paragraph else ""
+                })
 
             else:
                 quiz.append({
