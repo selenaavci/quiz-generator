@@ -328,21 +328,13 @@ def prompt_open_ended(context: str, difficulty: int = 3) -> str:
     d = max(1, min(5, d))
 
     if d <= 2:
-        style = """
-Soru Tipi (Zorluk 1-2): Tanım / amaç odaklı, kısa ve net.
-"""
+        style = "Soru Tipi (Zorluk 1-2): Tanım / amaç odaklı, kısa ve net."
     elif d == 3:
-        style = """
-Soru Tipi (Zorluk 3): Açıklama / ilişkilendirme.
-"""
+        style = "Soru Tipi (Zorluk 3): Açıklama / ilişkilendirme."
     elif d == 4:
-        style = """
-Soru Tipi (Zorluk 4): Kısa senaryo / uygulama.
-"""
+        style = "Soru Tipi (Zorluk 4): Kısa senaryo / uygulama."
     else:
-        style = """
-Soru Tipi (Zorluk 5): Analiz / istisna / yanlış çıkarım yakalama.
-"""
+        style = "Soru Tipi (Zorluk 5): Analiz / istisna / yanlış çıkarım."
 
     rules = f"""
 {quality_block(d)}
@@ -355,7 +347,6 @@ Kurallar:
   * 3-6 adet
   * Her biri 1-3 kelime
   * Her keyword, "answer" içinde BİREBİR geçmek zorunda (aynı yazım)
-  * Her keyword, mümkünse metinde de BİREBİR geçsin
   * Stopword/generic kelimeler ("şey", "durum", "süreç", "yöntem") YASAK
 - Çıktı SADECE JSON olacak. Markdown / code fence / ekstra metin YASAK.
 
@@ -365,7 +356,7 @@ JSON Şeması:
   "question": "...?",
   "answer": "...",
   "keywords": ["...", "...", "..."],
-  "explanation": "Kısa (1 cümle) not (opsiyonel)"
+  "explanation": ""
 }}
 """
 
@@ -374,6 +365,39 @@ Metin:
 \"\"\"{context}\"\"\"
 
 {style}
+
+{rules}
+
+SADECE JSON ÇIKTI ÜRET.
+""".strip()
+
+
+def prompt_open_ended_easy(context: str) -> str:
+    rules = f"""
+GENEL KURALLAR:
+- YALNIZCA aşağıdaki metne dayan (uydurma yok).
+- Tek bir açık uçlu soru üret.
+- Soru “tanım/amaç/sonuç” gibi basit ve doğrudan olsun.
+- Sonra soruyu 2-4 cümleyle SEN cevapla (metin dışı bilgi yok).
+- "keywords" üret:
+  * 3-6 adet
+  * 1-3 kelime
+  * Her biri "answer" içinde BİREBİR geçmek zorunda
+  * Stopword/generic kelimeler YASAK
+- Çıktı SADECE JSON.
+
+JSON:
+{{
+  "type": "open",
+  "question": "...?",
+  "answer": "...",
+  "keywords": ["...", "...", "..."],
+  "explanation": ""
+}}
+"""
+    return f"""
+Metin:
+\"\"\"{context}\"\"\"
 
 {rules}
 
