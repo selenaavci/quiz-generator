@@ -880,6 +880,21 @@ def _keyword_coverage_ratio(keywords: List[str], context: str) -> float:
     return hit / max(len(kws), 1)
 
 
+def _keywords_in_answer_ratio(keywords: List[str], answer: str) -> float:
+    a = (answer or "").lower()
+    kws = _clean_open_keywords(keywords)
+    if not kws:
+        return 0.0
+
+    hit = 0
+    for kw in kws:
+        k = kw.strip().lower()
+        if re.search(rf"\b{re.escape(k)}\b", a):
+            hit += 1
+
+    return hit / max(len(kws), 1)
+
+
 async def _generate_open_with_retry(
     client: MistralClient,
     paragraph: str,
@@ -911,32 +926,40 @@ async def _generate_open_with_retry(
 
             parsed = parse_open_ended(raw)
             q_text = str(parsed.get("question", "")).strip()
+            ans_text = str(parsed.get("answer", "")).strip()
+            
             kws = parsed.get("keywords") or []
             kws = _clean_open_keywords(kws)
-
+            
+            if not ans_text:
+                _m_inc(metrics, "open_keyword_rejected")
+                last_err = ValueError("open answer empty")
+                continue
+            
             if len(kws) < 3:
                 _m_inc(metrics, "open_keyword_rejected")
                 last_err = ValueError("open keyword cleaned < 3")
                 continue
-
+            
             if _open_question_too_generic(q_text):
                 _m_inc(metrics, "open_guard_generic")
                 last_err = ValueError("open generic question guard")
                 continue
-
+            
             if _has_absolute_language(q_text) and not _absolute_supported_by_context(q_text, paragraph):
                 _m_inc(metrics, "open_guard_absolute")
                 last_err = ValueError("open absolute language guard")
                 continue
-
-            cov = _keyword_coverage_ratio(kws, paragraph)
-            if cov < 0.75:
-                _m_inc(metrics, "open_guard_leakage")
-                last_err = ValueError(f"open leakage guard (cov={cov})")
-                continue
             
-            parsed["keywords"] = kws[:6]
+            cov_ctx = _keyword_coverage_ratio(kws, paragraph)
+            cov_ans = _keywords_in_answer_ratio(kws, ans_text)
+            if cov_ctx < 0.75 or cov_ans < 0.95:
+                _m_inc(metrics, "open_guard_leakage")
+                last_err = ValueError(f"open coverage guard (ctx={cov_ctx}, ans={cov_ans})")
+                continue
 
+            parsed["keywords"] = kws[:6]
+            parsed["answer"] = ans_text
             parsed["difficulty"] = int(d)
             _m_inc(metrics, "open_success")
             return parsed
@@ -944,38 +967,8 @@ async def _generate_open_with_retry(
         except Exception as e:
             last_err = e
 
-    _m_inc(metrics, "open_fallback_used")
     _m_inc(metrics, "open_fail")
-
-    base = " ".join((paragraph or "").strip().split())
-    base_short = base[:240].strip()
-
-    fallback_question = (
-        "Aşağıdaki ifadeye dayanarak, metindeki temel kavramı ve bunun amacını kendi cümlelerinizle açıklayınız: "
-        + f"\"{base_short}\""
-    )
-
-    toks = [t.strip(".,;:()[]{}\"'“”’‘").lower() for t in base.split()]
-    toks = [t for t in toks if t and len(t) >= 4]
-    toks = [t for t in toks if t not in _TR_STOPWORDS and t not in _GENERIC_ABSTRACT and t not in _OPEN_BAD]
-    
-    uniq = []
-    for t in toks:
-        if t not in uniq and _WORD.match(t):
-            uniq.append(t)
-        if len(uniq) >= 5:
-            break
-    
-    if len(uniq) < 3:
-        uniq = ["tanım", "amaç", "istisna"]
-
-    return {
-        "type": "open",
-        "question": fallback_question,
-        "keywords": uniq[:6],
-        "explanation": "",
-        "difficulty": 3,
-    }
+    raise ValueError(f"Open-ended üretimi başarısız: {last_err} | raw_preview={last_raw_preview}")
 
 
 # ============================================================
