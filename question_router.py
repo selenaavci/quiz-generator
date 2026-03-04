@@ -835,9 +835,8 @@ async def _generate_fill_with_retry(
 
 _OPEN_BAD = {
     "farklı", "bunlar", "olabilecek", "şekilde", "sayıda", "gibi", "bazı", "çeşitli",
-    "şey", "durum", "süreç", "yöntem", "bilgi", "veri", "sistem", "uygulama",
-    "konu", "işlem", "amaç", "kural", "madde", "olan", "olup",
-    "farkli", "sekilde", "sayida", "bazi", "cesitli", "sey", "surec"
+    "şey", "durum", "olan", "olup",
+    "farkli", "sekilde", "sayida", "bazi", "cesitli", "sey"
 }
 
 _OPEN_WORD = re.compile(r"^[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]+$")
