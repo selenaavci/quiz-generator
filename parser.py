@@ -11,7 +11,6 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
         return None
     t = text.strip()
 
-    # direct
     try:
         obj = json.loads(t)
         if isinstance(obj, dict):
@@ -19,7 +18,6 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
-    # extract first {...}
     m = _JSON_RE.search(t)
     if not m:
         return None
@@ -47,7 +45,6 @@ def parse_mcq(text: str) -> dict:
     """
     j = _extract_json(text)
     if j and isinstance(j, dict):
-        # normalize minimal schema
         if "question" in j and ("options" in j) and ("correct" in j):
             j.setdefault("type", "mcq")
             return j
@@ -194,26 +191,20 @@ def parse_mcq_stage3(raw: str) -> Dict[str, Any]:
 
 
 def parse_open_ended(text: str) -> dict:
-    """
-    Prefer JSON:
-    {
-      "type": "open",
-      "question": "...?",
-      "keywords": ["...", "...", "..."],
-      "explanation": "..."
-    }
-    """
     j = _extract_json(text)
     if not j or not isinstance(j, dict):
         raise ValueError("Open-ended parse edilemedi: JSON yok")
 
     j.setdefault("type", j.get("type") or "open")
+
     q = str(j.get("question", "")).strip()
+    ans = str(j.get("answer", "")).strip()
     kws = j.get("keywords")
 
     if not q:
         raise ValueError("Open-ended parse edilemedi: question boş")
-
+    if not ans:
+        raise ValueError("Open-ended parse edilemedi: answer boş")
     if not isinstance(kws, list):
         raise ValueError("Open-ended parse edilemedi: keywords list değil")
 
@@ -227,7 +218,8 @@ def parse_open_ended(text: str) -> dict:
         raise ValueError("Open-ended parse edilemedi: keywords < 3")
 
     j["question"] = q
-    j["keywords"] = keywords[:6]  
+    j["answer"] = ans
+    j["keywords"] = keywords[:6]
     if "explanation" in j and j["explanation"] is None:
         j["explanation"] = ""
 
