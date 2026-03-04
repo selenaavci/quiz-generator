@@ -840,7 +840,7 @@ _OPEN_BAD = {
     "farkli", "sekilde", "sayida", "bazi", "cesitli", "sey", "surec"
 }
 
-_WORD = re.compile(r"^[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]+$")
+_OPEN_WORD = re.compile(r"^[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]+$")
 
 def _clean_open_keywords(keywords: List[str]) -> List[str]:
     out = []
@@ -855,7 +855,7 @@ def _clean_open_keywords(keywords: List[str]) -> List[str]:
             continue
         if len(k.split()) > 3:
             continue
-        if " " not in k and not _WORD.match(k):
+        if " " not in k and not _OPEN_WORD.match(k):
             continue
         out.append(raw)
 
@@ -1035,7 +1035,7 @@ async def _generate_open_with_retry(
         except Exception as e:
             last_err = e
 
-     try:
+    try:
         _m_inc(metrics, "open_fallback_llm_used")
         return await _generate_open_easy_fallback(client, paragraph, metrics)
     except Exception as e:
@@ -1146,6 +1146,7 @@ async def generate_quiz(
 
     client = MistralClient()
     quiz: List[Dict[str, Any]] = []
+
     metrics = {
         "preprocessing_total_paragraphs": 0,
         "preprocessing_merged_paragraphs": 0,
@@ -1194,7 +1195,12 @@ async def generate_quiz(
         "open_guard_leakage": 0,
         "open_guard_absolute": 0,
         "open_keyword_rejected": 0,
-        "open_fallback_used": 0,
+
+        "open_fallback_llm_used": 0,
+        "open_easy_total": 0,
+        "open_easy_retry": 0,
+        "open_easy_success": 0,
+        "open_easy_fail": 0,
 
         "coverage_total_sources": 0,
         "coverage_unique_sources_used": 0,
@@ -1218,15 +1224,13 @@ async def generate_quiz(
     cursor = 0
     tf_counter = 0
 
-    # Semantic Coverage
-    source_use_count = {}
-    recent_sources = []
-    all_used_sources = []
+    source_use_count: Dict[str, int] = {}
+    recent_sources: List[str] = []
+    all_used_sources: List[str] = []
 
     n_par = len(paragraphs)
     MAX_PER_SOURCE = 2 if n_par >= 12 else 3
     COOLDOWN_K = 4 if n_par >= 12 else 2
-
     SIM_THRESHOLD = 0.92 if n_par >= 12 else 0.95
 
     for i, qtype in enumerate(type_plan, start=1):
@@ -1241,6 +1245,10 @@ async def generate_quiz(
                 _m_inc(metrics, "question_generation_retry_count")
 
             paragraph, cursor = _select_best_paragraph(paragraphs, qtype, cursor)
+            if not paragraph:
+                last_err = ValueError("Selected paragraph is empty")
+                continue
+
             src_preview = (paragraph[:200] + "...") if paragraph else ""
             src_sig = _signature(paragraph)
             used = int(source_use_count.get(src_sig, 0))
@@ -1260,7 +1268,7 @@ async def generate_quiz(
                 tf_counter += 1
                 tf_local_index = tf_counter
 
-            if qtype in ("mcq", "fill", "open") and tries <= 3 and src_sig in seen_source_sigs:
+            if qtype in ("mcq", "fill", "open") and tries <= 3 and (src_sig in seen_source_sigs):
                 continue
 
             try:
@@ -1275,6 +1283,10 @@ async def generate_quiz(
                 )
 
                 q_text = str(q.get("question", "")).strip()
+                if not q_text:
+                    last_err = ValueError("Generated question text is empty")
+                    continue
+
                 q_norm = _normalize_text(q_text)
                 q_sig = _signature(q_norm)
 
@@ -1283,24 +1295,27 @@ async def generate_quiz(
                     continue
 
                 # Near-duplicate guard
-                if len(seen_question_norms) >= 1 and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
+                if seen_question_norms and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
                     _m_inc(metrics, "skip_too_similar")
                     continue
+                    
+                if q.get("type") == "open":
+                    q.pop("answer", None)
 
                 q["source"] = src_preview
                 quiz.append(q)
 
                 dd = q.get("difficulty")
                 try:
-                    dd = int(dd)
+                    dd_int = int(dd)
                 except Exception:
-                    dd = None
-
-                if dd in (1, 2, 3, 4, 5):
-                    metrics[f"difficulty_count_{dd}"] = int(metrics.get(f"difficulty_count_{dd}", 0)) + 1
+                    dd_int = None
+                if dd_int in (1, 2, 3, 4, 5):
+                    metrics[f"difficulty_count_{dd_int}"] = int(metrics.get(f"difficulty_count_{dd_int}", 0)) + 1
 
                 seen_question_sigs.add(q_sig)
                 seen_question_norms.append(q_norm)
+
                 source_use_count[src_sig] = int(source_use_count.get(src_sig, 0)) + 1
                 recent_sources.append(src_sig)
                 all_used_sources.append(src_sig)
@@ -1315,9 +1330,8 @@ async def generate_quiz(
                 continue
 
         else:
-            base = paragraph or ""
-            base_short = (" ".join(base.split())[:220]).strip()
-        
+            base_short = (" ".join((paragraph or "").split())[:220]).strip()
+
             if qtype == "mcq":
                 quiz.append({
                     "type": "mcq",
@@ -1331,8 +1345,9 @@ async def generate_quiz(
                     "correct": "A",
                     "explanation": "",
                     "difficulty": 3,
-                    "source": src_preview
+                    "source": (paragraph[:200] + "...") if paragraph else ""
                 })
+
             elif qtype == "tf":
                 quiz.append({
                     "type": "true_false",
@@ -1340,8 +1355,9 @@ async def generate_quiz(
                     "answer": "Doğru",
                     "explanation": "",
                     "difficulty": 3,
-                    "source": src_preview
+                    "source": (paragraph[:200] + "...") if paragraph else ""
                 })
+
             elif qtype == "fill":
                 quiz.append({
                     "type": "fill",
@@ -1349,16 +1365,17 @@ async def generate_quiz(
                     "answer": "temel kavram",
                     "explanation": "",
                     "difficulty": 3,
-                    "source": src_preview
+                    "source": (paragraph[:200] + "...") if paragraph else ""
                 })
-            else: 
+
+            elif qtype == "open":
+                pass
+
+            else:
                 quiz.append({
-                    "type": "open",
-                    "question": f"Aşağıdaki ifadeye dayanarak, temel kavramı ve amacını kendi cümlelerinizle açıklayınız:\n\"{base_short}\"",
-                    "keywords": ["tanım", "amaç", "kapsam"],
-                    "explanation": "",
-                    "difficulty": 3,
-                    "source": src_preview
+                    "type": "error",
+                    "error": f"Unknown question type or generation failed: {qtype} | last_err={last_err}",
+                    "source": (paragraph[:200] + "...") if paragraph else ""
                 })
 
     total_sources = len(paragraphs)
