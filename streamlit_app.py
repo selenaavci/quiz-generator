@@ -8,7 +8,7 @@ import streamlit as st
 
 from file_loader import load_file
 from paragraph_selector import extract_context_chunks
-from question_router import generate_quiz
+from question_router import generate_quiz_with_metrics
 
 from excel_exporter import ExcelMeta, export_quiz_to_xlsx
 
@@ -22,6 +22,12 @@ if "LLM_BASE_URL" in st.secrets:
 
 if "LLM_MODEL" in st.secrets:
     os.environ["LLM_MODEL"] = st.secrets["LLM_MODEL"]
+
+
+if "last_metrics" not in st.session_state:
+    st.session_state.last_metrics = None
+if "last_metrics_status" not in st.session_state:
+    st.session_state.last_metrics_status = None
 
 
 def run_async(coro):
@@ -206,7 +212,8 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
 
         with st.spinner("LLM ile sorular üretiliyor..."):
             quiz: List[dict] = run_async(
-                generate_quiz(
+                quiz, metrics = run_async(
+                generate_quiz_with_metrics(
                     paragraphs,
                     mcq_count=mcq_count,
                     tf_count=tf_count,
@@ -215,15 +222,19 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                     difficulty=difficulty,
                 )
             )
+            st.session_state.last_metrics = metrics
 
         if not quiz:
+            st.session_state.last_metrics_status = "failed"
             st.error("Quiz üretilemedi (boş çıktı).")
             st.stop()
 
         if len(quiz) == 1 and isinstance(quiz[0], dict) and quiz[0].get("type") == "error":
+            st.session_state.last_metrics_status = "failed"
             st.error(f"Quiz üretimi hata verdi: {quiz[0].get('error', 'Bilinmeyen hata')}")
             st.stop()
 
+        st.session_state.last_metrics_status = "success"
         st.success(f"✅ Quiz hazır! Toplam soru: {len(quiz)}")
 
         # ---------------- Results ----------------
@@ -325,3 +336,18 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+if st.session_state.last_metrics:
+    st.markdown("### 📊 Metrikler")
+    if st.session_state.last_metrics_status == "success":
+        st.caption("Son quiz üretimi başarılı. Metrikleri indirebilirsiniz.")
+    elif st.session_state.last_metrics_status == "failed":
+        st.caption("Son quiz üretimi başarısız oldu. Hata analizi için metrikleri indirebilirsiniz.")
+
+    st.download_button(
+        "Metrikleri indir (JSON)",
+        data=json.dumps(st.session_state.last_metrics, ensure_ascii=False, indent=2),
+        file_name="quiz_metrics.json",
+        mime="application/json",
+        use_container_width=True,
+    )
