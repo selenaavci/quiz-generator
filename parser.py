@@ -220,7 +220,6 @@ def parse_open_ended(text: str) -> dict:
     j["question"] = q
     j["answer"] = ans
     j["keywords"] = keywords[:6]
-    if "explanation" in j and j["explanation"] is None:
-        j["explanation"] = ""
+    j["explanation"] = str(j.get("explanation", "") or "")
 
     return j
