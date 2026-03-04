@@ -211,8 +211,7 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
             st.stop()
 
         with st.spinner("LLM ile sorular üretiliyor..."):
-            quiz: List[dict] = run_async(
-                quiz, metrics = run_async(
+            quiz, metrics = run_async(
                 generate_quiz_with_metrics(
                     paragraphs,
                     mcq_count=mcq_count,
