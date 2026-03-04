@@ -12,6 +12,7 @@ from prompts import (
     prompt_mcq_stage2_distractors,
     prompt_mcq_stage3_verify,
     prompt_open_ended,
+    prompt_open_ended_easy,
 )
 from parser import (
     parse_mcq,
@@ -895,6 +896,73 @@ def _keywords_in_answer_ratio(keywords: List[str], answer: str) -> float:
     return hit / max(len(kws), 1)
 
 
+
+async def _generate_open_easy_fallback(
+    client: MistralClient,
+    paragraph: str,
+    metrics: dict,
+) -> dict:
+    _m_inc(metrics, "open_easy_total")
+
+    last_err = None
+    last_raw_preview = None
+
+    for attempt in range(1, 3):
+        try:
+            if attempt > 1:
+                _m_inc(metrics, "open_easy_retry")
+
+            p = prompt_open_ended_easy(paragraph)
+
+            raw = await _llm_generate(
+                client, metrics,
+                messages=[{"role": "user", "content": p}],
+                temperature=0.2,
+                max_tokens=360,
+            )
+            last_raw_preview = (raw or "")[:400]
+
+            parsed = parse_open_ended(raw)
+            q_text = str(parsed.get("question", "")).strip()
+            ans_text = str(parsed.get("answer", "")).strip()
+
+            kws = _clean_open_keywords(parsed.get("keywords") or [])
+
+            if not ans_text:
+                last_err = ValueError("open easy answer empty")
+                continue
+
+            if len(kws) < 3:
+                last_err = ValueError("open easy keywords < 3")
+                continue
+
+            if _open_question_too_generic(q_text):
+                last_err = ValueError("open easy generic guard")
+                continue
+
+            if _has_absolute_language(q_text) and not _absolute_supported_by_context(q_text, paragraph):
+                last_err = ValueError("open easy absolute guard")
+                continue
+
+            cov_ctx = _keyword_coverage_ratio(kws, paragraph)
+            cov_ans = _keywords_in_answer_ratio(kws, ans_text)
+            if cov_ctx < 0.60 or cov_ans < 0.95:
+                last_err = ValueError(f"open easy coverage (ctx={cov_ctx}, ans={cov_ans})")
+                continue
+
+            parsed["keywords"] = kws[:6]
+            parsed["answer"] = ans_text
+            parsed["difficulty"] = 2
+            _m_inc(metrics, "open_easy_success")
+            return parsed
+
+        except Exception as e:
+            last_err = e
+
+    _m_inc(metrics, "open_easy_fail")
+    raise ValueError(f"Open-ended EASY fallback başarısız: {last_err} | raw_preview={last_raw_preview}")
+
+
 async def _generate_open_with_retry(
     client: MistralClient,
     paragraph: str,
@@ -966,6 +1034,12 @@ async def _generate_open_with_retry(
 
         except Exception as e:
             last_err = e
+
+     try:
+        _m_inc(metrics, "open_fallback_llm_used")
+        return await _generate_open_easy_fallback(client, paragraph, metrics)
+    except Exception as e:
+        last_err = e
 
     _m_inc(metrics, "open_fail")
     raise ValueError(f"Open-ended üretimi başarısız: {last_err} | raw_preview={last_raw_preview}")
