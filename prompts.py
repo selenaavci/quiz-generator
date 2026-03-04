@@ -325,55 +325,45 @@ DİL HEDEFİ:
 
 def prompt_open_ended(context: str, difficulty: int = 3) -> str:
     d = int(difficulty) if str(difficulty).strip().isdigit() else 3
-    if d < 1: d = 1
-    if d > 5: d = 5
+    d = max(1, min(5, d))
 
     if d <= 2:
         style = """
 Soru Tipi (Zorluk 1-2): Tanım / amaç odaklı, kısa ve net.
-- "Nedir?" / "Ne amaçla kullanılır?" gibi.
-- Tek kavramı ölç.
 """
     elif d == 3:
         style = """
 Soru Tipi (Zorluk 3): Açıklama / ilişkilendirme.
-- Bir kavramı bağlamıyla açıklat.
-- Kısa kapsamlı ama dar bir soru sor.
 """
     elif d == 4:
         style = """
 Soru Tipi (Zorluk 4): Kısa senaryo / uygulama.
-- Context içindeki kurala uygun kısa bir senaryo kurgula.
-- "Bu durumda ne yapılmalı / hangi ilke uygulanır?" gibi.
 """
     else:
         style = """
 Soru Tipi (Zorluk 5): Analiz / istisna / yanlış çıkarım yakalama.
-- Context içindeki istisna/koşulları ölç.
-- Bir yanlış çıkarımı fark ettir veya risk/sonuç analizi yaptır.
 """
 
     rules = f"""
 {quality_block(d)}
 
 Kurallar:
-- YALNIZCA aşağıdaki metne dayan.
-- Metin dışı bilgi EKLEME (uydurma yok).
-- Soru "genel" olmayacak. (Örn: "KVKK'yı açıklayınız" YASAK)
-- Soru tek ve net olmalı.
-- Beklenen cevap için 3-6 adet anahtar kelime/ifade üret:
-  * Her biri 1-3 kelime olsun
-  * Mümkünse metinde geçen ifadeler olsun
-  * Stopword/generic kelimeler ("şey", "durum", "süreç", "yöntem") kullanma
+- YALNIZCA aşağıdaki metne dayan (uydurma yok).
+- Önce soruyu üret, sonra bu soruyu metne dayanarak 2-5 cümleyle SEN CEVAPLA.
+- "answer" metin dışı bilgi içermemeli; mümkünse metindeki ifadeleri kullan.
+- Sonra "keywords" üret:
+  * 3-6 adet
+  * Her biri 1-3 kelime
+  * Her keyword, "answer" içinde BİREBİR geçmek zorunda (aynı yazım)
+  * Her keyword, mümkünse metinde de BİREBİR geçsin
+  * Stopword/generic kelimeler ("şey", "durum", "süreç", "yöntem") YASAK
 - Çıktı SADECE JSON olacak. Markdown / code fence / ekstra metin YASAK.
-- "keywords" SADECE metinde birebir geçen (aynı yazımla) kavram/terimler olacak.
-- Aşağıdaki kelimeler keyword OLAMAZ: farklı, bunlar, olabilecek, şekilde, sayıda, gibi, bazı, çeşitli, bankada, kurumda
-- Eğer metinde birebir geçen uygun kavram bulamazsan keywords üretme; bunun yerine soruyu yeniden kurgula.
 
 JSON Şeması:
 {{
   "type": "open",
   "question": "...?",
+  "answer": "...",
   "keywords": ["...", "...", "..."],
   "explanation": "Kısa (1 cümle) not (opsiyonel)"
 }}
