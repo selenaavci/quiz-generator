@@ -1127,26 +1127,8 @@ async def generate_one_question(
 # ============================================================
 # Quiz generation (adaptive routing + dedup + controlled source reuse)
 # ============================================================
-
-async def generate_quiz(
-    paragraphs: List[str],
-    mcq_count: int,
-    tf_count: int,
-    fill_count: int,
-    open_count: int = 0,
-    difficulty: Union[int, str] = "Orta",
-) -> List[Dict[str, Any]]:
-
-    if not paragraphs:
-        return [{
-            "type": "error",
-            "error": "Paragraph list is empty"
-        }]
-
-    client = MistralClient()
-    quiz: List[Dict[str, Any]] = []
-
-    metrics = {
+def _init_metrics() -> dict:
+    return {
         "preprocessing_total_paragraphs": 0,
         "preprocessing_merged_paragraphs": 0,
         "preprocessing_selected_paragraphs": 0,
@@ -1214,6 +1196,29 @@ async def generate_quiz(
         "skip_too_similar": 0,
     }
 
+
+async def generate_quiz(
+    paragraphs: List[str],
+    mcq_count: int,
+    tf_count: int,
+    fill_count: int,
+    open_count: int = 0,
+    difficulty: Union[int, str] = "Orta",
+    metrics: dict = None,
+) -> List[Dict[str, Any]]:
+
+    if not paragraphs:
+        return [{
+            "type": "error",
+            "error": "Paragraph list is empty"
+        }]
+
+    client = MistralClient()
+    quiz: List[Dict[str, Any]] = []
+
+    if metrics is None:
+        metrics = _init_metrics()
+    
     type_plan = _build_type_plan(mcq_count, tf_count, fill_count, open_count)
 
     seen_question_sigs = set()
@@ -1399,3 +1404,34 @@ async def generate_quiz(
 
     print("METRICS: ", metrics)
     return quiz
+
+
+async def generate_quiz_with_metrics(
+    paragraphs: List[str],
+    mcq_count: int,
+    tf_count: int,
+    fill_count: int,
+    open_count: int = 0,
+    difficulty: Union[int, str] = "Orta",
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+
+    metrics = _init_metrics()
+
+    try:
+        quiz = await generate_quiz(
+            paragraphs=paragraphs,
+            mcq_count=mcq_count,
+            tf_count=tf_count,
+            fill_count=fill_count,
+            open_count=open_count,
+            difficulty=difficulty,
+            metrics=metrics,
+        )
+        return quiz, metrics
+    except Exception as e:
+        err_quiz = [{
+            "type": "error",
+            "error": f"Quiz generation crashed: {e}"
+        }]
+        metrics["fatal_error"] = str(e)
+        return err_quiz, metrics
