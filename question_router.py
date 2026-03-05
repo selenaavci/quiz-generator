@@ -460,6 +460,31 @@ def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
     return True
 
 
+def _mcq_verify_is_blocking(verify: Dict[str, Any]) -> bool:
+    if not isinstance(verify, dict):
+        return False
+
+    if verify.get("pass") is True:
+        return False
+
+    fix = str(((verify.get("suggestion") or {}).get("fix") or "")).strip().lower()
+    if fix in {"rewrite_question", "regenerate_question"}:
+        return True
+
+    reason = str(verify.get("reason") or verify.get("error") or "").lower()
+    hard_fail_markers = [
+        "incorrect",
+        "wrong",
+        "not in context",
+        "halluc",
+        "contradict",
+        "yanlış",
+        "bağlam dışı",
+        "uyuşm",
+    ]
+    return any(x in reason for x in hard_fail_markers)
+
+
 async def _generate_mcq_multistage(
     client: MistralClient,
     paragraph: str,
@@ -556,17 +581,18 @@ async def _generate_mcq_multistage(
             _m_inc("mcq_rewrite_question_suggested")
             break
 
-        if isinstance(verify, dict) and verify.get("pass") is True:
-            if _mcq_is_valid(mcq):
-                _m_inc("mcq_multistage_success")
-                mcq["explanation"] = rationale
-                mcq["mcq_answer_type"] = answer_type
-                mcq["difficulty"] = int(difficulty)
-                return mcq
-            else:
-                _m_inc("mcq_option_guard_fail")
-                continue
+        verify_blocking = _mcq_verify_is_blocking(verify)
+        if verify_blocking:
+            continue
 
+        if _mcq_is_valid(mcq):
+            _m_inc("mcq_multistage_success")
+            mcq["explanation"] = rationale
+            mcq["mcq_answer_type"] = answer_type
+            mcq["difficulty"] = int(difficulty)
+            return mcq
+
+        _m_inc("mcq_option_guard_fail")
         continue
 
     raise ValueError(f"MCQ multi-stage verification failed: {last_verify}")
@@ -801,13 +827,15 @@ def _is_good_fill(parsed: dict, metrics: dict = None, context: str = "") -> bool
     if not q or not a:
         return False
 
-    if q.count("_____") != 1:
+    blank_count = q.count("_____")
+    if blank_count < 1 or blank_count > 2:
         return False
 
-    if len(a.split()) > 4:
+    if len(a.split()) > 6:
         return False
 
-    if a.lower() in q.lower():
+    q_without_blank = q.replace("_____", " ")
+    if re.search(rf"\b{re.escape(a.lower())}\b", q_without_blank.lower()):
         return False
 
     return True
@@ -1485,9 +1513,23 @@ async def generate_quiz_with_metrics(
     fill_count: int,
     open_count: int = 0,
     difficulty: Union[int, str] = "Orta",
+    preprocessing_metrics: Dict[str, Any] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
 
     metrics = _init_metrics()
+    metrics["preprocessing_selected_paragraphs"] = len(paragraphs or [])
+
+    if isinstance(preprocessing_metrics, dict):
+        for k in [
+            "preprocessing_total_paragraphs",
+            "preprocessing_merged_paragraphs",
+            "preprocessing_selected_paragraphs",
+        ]:
+            if k in preprocessing_metrics:
+                metrics[k] = int(preprocessing_metrics.get(k, 0))
+    elif paragraphs:
+        metrics["preprocessing_total_paragraphs"] = len(paragraphs)
+        metrics["preprocessing_merged_paragraphs"] = len(paragraphs)
 
     try:
         quiz = await generate_quiz(
