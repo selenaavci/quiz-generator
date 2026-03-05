@@ -519,6 +519,10 @@ async def _generate_mcq_multistage(
     )
     core = parse_mcq_stage1(raw1)
 
+    if not isinstance(core, dict) or not core:
+        _m_inc("mcq_stage1_parse_fail")
+        raise ValueError(f"MCQ stage1 parse empty. raw_preview={str(raw1)[:220]}")
+
     question = str(core.get("question", "")).strip()
     correct_answer = str(core.get("correct_answer", "")).strip()
     rationale = str(core.get("rationale", "")).strip()
@@ -877,6 +881,7 @@ async def _generate_fill_with_retry(
             _m_inc(metrics, "fill_quality_fail")
 
         except Exception as e:
+             _m_inc(metrics, "fill_parse_fail")
             last_err = e
 
     raise ValueError(f"Fill üretimi başarısız (retry sonrası): {last_err} | raw_preview={last_raw_preview}")
@@ -1241,6 +1246,7 @@ def _init_metrics() -> dict:
         "mcq_verify_fail": 0,
         "mcq_option_guard_fail": 0,
         "mcq_rewrite_question_suggested": 0,
+        "mcq_stage1_parse_fail": 0,
 
         "tf_total": 0,
         "tf_success": 0,
@@ -1255,6 +1261,7 @@ def _init_metrics() -> dict:
         "fill_fail": 0,
         "fill_quality_fail": 0,
         "fill_generic_answer_rejected": 0,
+        "fill_parse_fail": 0,
 
         "open_total": 0,
         "open_success": 0,
