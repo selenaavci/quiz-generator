@@ -228,6 +228,7 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                         open_count=open_count,
                         difficulty=difficulty,
                     )
+                )
                 
                 st.session_state.last_metrics = metrics
 
