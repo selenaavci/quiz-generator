@@ -59,7 +59,7 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
-   chunk = _extract_balanced_json_object(t)
+    chunk = _extract_balanced_json_object(t)
     if not chunk:
         m = _JSON_RE.search(t)
         if m:
