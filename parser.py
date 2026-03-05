@@ -6,10 +6,51 @@ from typing import Any, Dict, Optional
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
+def _extract_balanced_json_object(text: str) -> Optional[str]:
+    depth = 0
+    start = -1
+    in_string = False
+    escape = False
+
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    return text[start:i + 1]
+    return None
+
+
+def _clean_json_text(text: str) -> str:
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:json)?\s*", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s*```$", "", t)
+
+    t = t.replace("“", '"').replace("”", '"').replace("’", "'")
+    return t.strip()
+
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
     if not text or not isinstance(text, str):
         return None
-    t = text.strip()
+    t = _clean_json_text(text)
 
     try:
         obj = json.loads(t)
@@ -18,10 +59,14 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
-    m = _JSON_RE.search(t)
-    if not m:
+   chunk = _extract_balanced_json_object(t)
+    if not chunk:
+        m = _JSON_RE.search(t)
+        if m:
+            chunk = m.group(0)
+    if not chunk:
         return None
-    chunk = m.group(0)
+        
     try:
         obj = json.loads(chunk)
         if isinstance(obj, dict):
