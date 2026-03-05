@@ -28,6 +28,10 @@ if "last_metrics" not in st.session_state:
     st.session_state.last_metrics = None
 if "last_metrics_status" not in st.session_state:
     st.session_state.last_metrics_status = None
+if "last_quiz" not in st.session_state:
+    st.session_state.last_quiz = None
+if "last_error_message" not in st.session_state:
+    st.session_state.last_error_message = None
 
 
 def run_async(coro):
@@ -207,127 +211,41 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
             paragraphs = extract_context_chunks(text)
 
         if not paragraphs:
+            st.session_state.last_quiz = None
+            st.session_state.last_metrics = None
+            st.session_state.last_metrics_status = "failed"
+            st.session_state.last_error_message = "Dokümandan yeterli içerik çıkarılamadı. (Çok kısa/boş olabilir.)"
             st.error("Dokümandan yeterli içerik çıkarılamadı. (Çok kısa/boş olabilir.)")
-            st.stop()
 
-        with st.spinner("LLM ile sorular üretiliyor..."):
-            quiz, metrics = run_async(
-                generate_quiz_with_metrics(
-                    paragraphs,
-                    mcq_count=mcq_count,
-                    tf_count=tf_count,
-                    fill_count=fill_count,
-                    open_count=open_count,
-                    difficulty=difficulty,
-                )
-            )
-            st.session_state.last_metrics = metrics
+        else:
+            with st.spinner("LLM ile sorular üretiliyor..."):
+                quiz, metrics = run_async(
+                    generate_quiz_with_metrics(
+                        paragraphs,
+                        mcq_count=mcq_count,
+                        tf_count=tf_count,
+                        fill_count=fill_count,
+                        open_count=open_count,
+                        difficulty=difficulty,
+                    )
+                
+                st.session_state.last_metrics = metrics
 
-        if not quiz:
-            st.session_state.last_metrics_status = "failed"
-            st.error("Quiz üretilemedi (boş çıktı).")
-            st.stop()
-
-        if len(quiz) == 1 and isinstance(quiz[0], dict) and quiz[0].get("type") == "error":
-            st.session_state.last_metrics_status = "failed"
-            st.error(f"Quiz üretimi hata verdi: {quiz[0].get('error', 'Bilinmeyen hata')}")
-            st.stop()
-
-        st.session_state.last_metrics_status = "success"
-        st.success(f"✅ Quiz hazır! Toplam soru: {len(quiz)}")
-
-        # ---------------- Results ----------------
-        st.markdown("### 🧾 Üretilen Sorular")
-        for i, q in enumerate(quiz, start=1):
-            qtype = (q.get("type") or "unknown").upper()
-
-            st.markdown(
-                f"""
-                <div class="om-card">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div style="font-weight:900;">Soru {i}</div>
-                    <div class="om-badge">{qtype}</div>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            if "question" in q:
-                st.write(q["question"])
-
-            if q.get("type") == "mcq":
-                opts = q.get("options") or {}
-                if isinstance(opts, dict) and opts:
-                    st.write("**Şıklar:**")
-                    for k in sorted(opts.keys()):
-                        st.write(f"- **{k}**: {opts[k]}")
-                if q.get("correct") is not None:
-                    st.write("**Doğru:**", q.get("correct"))
-
-            elif q.get("type") in ("true_false", "tf"):
-                ans = q.get("answer") or q.get("label") or q.get("correct")
-                if ans is not None:
-                    st.write("**Cevap:**", ans)
-
-            elif q.get("type") == "fill":
-                if q.get("answer") is not None:
-                    st.write("**Cevap:**", q.get("answer"))
-
-            elif q.get("type") in ("open", "open_ended", "oe"):
-                kws = q.get("keywords") or []
-                if isinstance(kws, list) and kws:
-                    cleaned = [str(x).strip() for x in kws if str(x).strip()]
-                    if cleaned:
-                        st.write("**Anahtar Kelimeler:**", "; ".join(cleaned))
-
-            if q.get("explanation"):
-                st.caption(q["explanation"])
-
-            # Kaynak preview
-            src = q.get("source_preview") or q.get("source") or q.get("context")
-            if src:
-                with st.expander("Kaynak (preview)"):
-                    st.write(src)
-
-            st.markdown("")
-
-        # ---------------- Downloads ----------------
-        st.markdown("### 📥 İndir")
-
-        st.download_button(
-            "JSON indir",
-            data=json.dumps(quiz, ensure_ascii=False, indent=2),
-            file_name="quiz.json",
-            mime="application/json",
-            use_container_width=True,
-        )
-
-        # Excel export
-        meta = ExcelMeta(
-            zorluk_derecesi=difficulty,
-            departman=departman,
-            egitim=egitim,
-            konu=konu,
-            amac=amac,
-            hazirlayan=hazirlayan or "OdeaMind",
-        )
-
-        try:
-            with st.spinner("Excel hazırlanıyor..."):
-                xlsx_path = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx").name
-                export_quiz_to_xlsx(quiz=quiz, meta=meta, out_path=xlsx_path, sheet_name="Quiz")
-
-            with open(xlsx_path, "rb") as f:
-                st.download_button(
-                    "Excel indir (XLSX)",
-                    data=f.read(),
-                    file_name="quiz.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
-        except Exception as e:
-            st.warning(f"Excel export devre dışı kaldı: {e}")
+            if not quiz:
+                st.session_state.last_quiz = None
+                st.session_state.last_metrics_status = "failed"
+                st.session_state.last_error_message = "Quiz üretilemedi (boş çıktı)."
+                st.error("Quiz üretilemedi (boş çıktı).")
+            elif len(quiz) == 1 and isinstance(quiz[0], dict) and quiz[0].get("type") == "error":
+                st.session_state.last_quiz = None
+                st.session_state.last_metrics_status = "failed"
+                st.session_state.last_error_message = f"Quiz üretimi hata verdi: {quiz[0].get('error', 'Bilinmeyen hata')}"
+                st.error(st.session_state.last_error_message)
+            else:
+                st.session_state.last_quiz = quiz
+                st.session_state.last_metrics_status = "success"
+                st.session_state.last_error_message = None
+                st.success(f"✅ Quiz hazır! Toplam soru: {len(quiz)}")
 
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -336,17 +254,108 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
             except Exception:
                 pass
 
-if st.session_state.last_metrics:
-    st.markdown("### 📊 Metrikler")
-    if st.session_state.last_metrics_status == "success":
-        st.caption("Son quiz üretimi başarılı. Metrikleri indirebilirsiniz.")
-    elif st.session_state.last_metrics_status == "failed":
-        st.caption("Son quiz üretimi başarısız oldu. Hata analizi için metrikleri indirebilirsiniz.")
+if st.session_state.last_metrics_status == "failed" and st.session_state.last_error_message:
+    st.error(st.session_state.last_error_message)
 
+if st.session_state.last_quiz:
+    quiz = st.session_state.last_quiz
+    st.markdown("### 🧾 Üretilen Sorular")
+    for i, q in enumerate(quiz, start=1):
+        qtype = (q.get("type") or "unknown").upper()
+
+        st.markdown(
+            f"""
+            <div class="om-card">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-weight:900;">Soru {i}</div>
+                <div class="om-badge">{qtype}</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if "question" in q:
+            st.write(q["question"])
+
+        if q.get("type") == "mcq":
+            opts = q.get("options") or {}
+            if isinstance(opts, dict) and opts:
+                st.write("**Şıklar:**")
+                for k in sorted(opts.keys()):
+                    st.write(f"- **{k}**: {opts[k]}")
+            if q.get("correct") is not None:
+                st.write("**Doğru:**", q.get("correct"))
+
+        elif q.get("type") in ("true_false", "tf"):
+            ans = q.get("answer") or q.get("label") or q.get("correct")
+            if ans is not None:
+                st.write("**Cevap:**", ans)
+
+        elif q.get("type") == "fill":
+            if q.get("answer") is not None:
+                st.write("**Cevap:**", q.get("answer"))
+
+        elif q.get("type") in ("open", "open_ended", "oe"):
+            kws = q.get("keywords") or []
+            if isinstance(kws, list) and kws:
+                cleaned = [str(x).strip() for x in kws if str(x).strip()]
+                if cleaned:
+                    st.write("**Anahtar Kelimeler:**", "; ".join(cleaned))
+
+        if q.get("explanation"):
+            st.caption(q["explanation"])
+
+        src = q.get("source_preview") or q.get("source") or q.get("context")
+        if src:
+            with st.expander("Kaynak (preview)"):
+                st.write(src)
+
+        st.markdown("")
+
+
+if st.session_state.last_quiz or st.session_state.last_metrics:
+    st.markdown("### 📥 İndir")
+
+if st.session_state.last_quiz:
     st.download_button(
-        "Metrikleri indir (JSON)",
-        data=json.dumps(st.session_state.last_metrics, ensure_ascii=False, indent=2),
-        file_name="quiz_metrics.json",
+        "JSON indir",
+        data=json.dumps(st.session_state.last_quiz, ensure_ascii=False, indent=2),
+        file_name="quiz.json",
         mime="application/json",
         use_container_width=True,
     )
+
+if st.session_state.last_metrics or st.session_state.last_quiz:
+    meta = ExcelMeta(
+        zorluk_derecesi=difficulty,
+        departman=departman,
+        egitim=egitim,
+        konu=konu,
+        amac=amac,
+        hazirlayan=hazirlayan or "OdeaMind",
+    )
+    quiz_for_export = st.session_state.last_quiz or []
+    file_name = "quiz_with_metrics.xlsx" if st.session_state.last_quiz else "quiz_metrics.xlsx"
+
+    try:
+        with st.spinner("Excel hazırlanıyor..."):
+            xlsx_path = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx").name
+            export_quiz_to_xlsx(
+                quiz=quiz_for_export,
+                meta=meta,
+                out_path=xlsx_path,
+                sheet_name="Quiz",
+                metrics=st.session_state.last_metrics,
+            )
+
+        with open(xlsx_path, "rb") as f:
+            st.download_button(
+                "Excel indir (Quiz + Metrics)",
+                data=f.read(),
+                file_name=file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+    except Exception as e:
+        st.warning(f"Excel export devre dışı kaldı: {e}")
