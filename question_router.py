@@ -1327,6 +1327,7 @@ async def generate_quiz(
     SIM_THRESHOLD = 0.92 if n_par >= 12 else 0.95
 
     for i, qtype in enumerate(type_plan, start=1):
+        failed_sources_for_this_question = set()
         max_tries = 8
         tries = 0
         last_err = None
@@ -1344,6 +1345,10 @@ async def generate_quiz(
 
             src_preview = (paragraph[:200] + "...") if paragraph else ""
             src_sig = _signature(paragraph)
+
+            if src_sig in failed_sources_for_this_question:
+                continue
+                
             used = int(source_use_count.get(src_sig, 0))
 
             if tries <= 3 and tries < max_tries - 1:
@@ -1419,6 +1424,7 @@ async def generate_quiz(
                 break
 
             except Exception as e:
+                failed_sources_for_this_question.add(src_sig)
                 last_err = e
                 continue
 
