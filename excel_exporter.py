@@ -253,6 +253,7 @@ def export_quiz_to_xlsx(
     meta: Optional[ExcelMeta] = None,
     out_path: str = "quiz.xlsx",
     sheet_name: str = "Quiz",
+    metrics: Optional[Dict[str, Any]] = None,
 ) -> str:
     meta = meta or ExcelMeta()
 
@@ -289,6 +290,33 @@ def export_quiz_to_xlsx(
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
         for cell in row:
             if get_column_letter(cell.column) in wrap_cols:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    if isinstance(metrics, dict):
+        mws = wb.create_sheet("Metrics")
+        mws.append(["Metric", "Value"])
+
+        mh_fill = PatternFill("solid", fgColor="1A1A1A")
+        mh_font = Font(color="FFFFFF", bold=True)
+        for col_idx in range(1, 3):
+            cell = mws.cell(row=1, column=col_idx)
+            cell.fill = mh_fill
+            cell.font = mh_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        for k in sorted(metrics.keys()):
+            v = metrics.get(k)
+            if isinstance(v, (dict, list, tuple)):
+                val = str(v)
+            else:
+                val = "" if v is None else str(v)
+            mws.append([str(k), val])
+
+        
+        mws.column_dimensions["A"].width = 44
+        mws.column_dimensions["B"].width = 100
+        for row in mws.iter_rows(min_row=2, max_row=mws.max_row):
+            for cell in row:
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
 
     wb.save(out_path)
