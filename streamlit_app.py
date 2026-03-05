@@ -104,7 +104,7 @@ def _safe_filename(value: str) -> str:
 
 def _build_export_filename(konu: str, difficulty: str) -> str:
     konu_clean = _safe_filename(konu)
-    diff_clean = _safe_filename(str(difficulty).lower())
+    diff_clean = _safe_filename(str(difficulty))
 
     if not konu_clean:
         return "quiz"
