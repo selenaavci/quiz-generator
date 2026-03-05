@@ -1,5 +1,6 @@
 # oss_client.py
 import os
+import asyncio
 import aiohttp
 
 
@@ -31,7 +32,7 @@ class MistralClient:
     async def generate(
         self,
         messages,
-        max_tokens: int = 400,
+        max_tokens: int = 700,
         temperature: float = 0.5,
     ) -> str:
         url = f"{self.base_url}/chat/completions"
@@ -55,24 +56,41 @@ class MistralClient:
 
         timeout = aiohttp.ClientTimeout(total=120)
 
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            try:
-                async with session.post(url, json=payload, headers=headers) as resp:
-                    raw_text = await resp.text()
+        max_retries = 5
+        for attempt in range(max_retries):
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.post(url, json=payload, headers=headers) as resp:
+                        raw_text = await resp.text()
 
-                    if resp.status != 200:
-                        raise RuntimeError(
-                            f"LLM error {resp.status}: {raw_text[:600]}"
-                        )
+                        if resp.status == 429 and attempt < max_retries - 1:
+                            wait = 2 ** attempt + 1
+                            await asyncio.sleep(wait)
+                            continue
 
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        raise RuntimeError(
-                            f"LLM response parse error: {raw_text[:600]}"
-                        )
+                        if resp.status != 200:
+                            raise RuntimeError(
+                                f"LLM error {resp.status}: {raw_text[:600]}"
+                            )
 
-                return data["choices"][0]["message"]["content"]
+                        try:
+                            data = await resp.json()
+                        except Exception:
+                            raise RuntimeError(
+                                f"LLM response parse error: {raw_text[:600]}"
+                            )
 
-            except aiohttp.ClientError as e:
-                raise RuntimeError(f"LLM connection error: {e}")
+                    content = data["choices"][0]["message"]["content"]
+                    # Some models don't support json_object response_format and return null
+                    if content is None and "response_format" in payload:
+                        del payload["response_format"]
+                        continue
+                    return content
+
+                except aiohttp.ClientError as e:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt + 1)
+                        continue
+                    raise RuntimeError(f"LLM connection error: {e}")
+
+        raise RuntimeError("LLM max retries exceeded (429 rate limit)")

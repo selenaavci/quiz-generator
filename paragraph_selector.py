@@ -8,7 +8,7 @@ def split_paragraphs(text: str):
     return cleaned
 
 
-def merge_small_paragraphs(paragraphs, min_words=40):
+def merge_small_paragraphs(paragraphs, min_words=20):
     merged = []
     buffer = ""
 
@@ -102,7 +102,7 @@ def extract_context_chunks(text: str, max_words: int = 250, min_words: int = 40,
     return all_chunks
 
 
-# Fill Sentence Selection 
+# Fill Sentence Selection
 def split_into_sentences(text: str) -> List[str]:
     text = text.replace("\n", " ").strip()
     sentences = re.split(r'(?<=[.!?])\s+', text)
@@ -115,7 +115,7 @@ def is_good_fill_sentence(sentence: str) -> bool:
         return False
 
     wc = len(s.split())
-    if wc < 8 or wc > 28:
+    if wc < 6 or wc > 35:
         return False
 
     if "_______" in s:
@@ -127,7 +127,7 @@ def is_good_fill_sentence(sentence: str) -> bool:
     if s.count(";") >= 2 or s.count(",") >= 6:
         return False
 
-    if not (re.search(r"\b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b", s) or re.search(r"“.+?”|\".+?\"|\(.+?\)", s)):
+    if not (re.search(r"\b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b", s) or re.search(r"\u201c.+?\u201d|\".+?\"|\(.+?\)", s)):
         if not (" olarak " in s.lower() or " is " in s.lower() or " are " in s.lower()):
             return False
 
