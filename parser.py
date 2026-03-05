@@ -1,5 +1,6 @@
 import re
 import json
+import ast
 from typing import Any, Dict, Optional
 
 
@@ -47,10 +48,29 @@ def _clean_json_text(text: str) -> str:
     t = t.replace("“", '"').replace("”", '"').replace("’", "'")
     return t.strip()
 
+
+_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
+
+
+def _fix_trailing_commas(t: str) -> str:
+    return _TRAILING_COMMA_RE.sub(r"\1", t or "")
+
+
+def _try_literal_eval_dict(t: str):
+    try:
+        obj = ast.literal_eval(t)
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        return None
+    return None
+
+
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
     if not text or not isinstance(text, str):
         return None
     t = _clean_json_text(text)
+    t = _fix_trailing_commas(t)
 
     try:
         obj = json.loads(t)
@@ -59,6 +79,10 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
+    obj2 = _try_literal_eval_dict(t)
+    if obj2:
+        return obj2
+
     chunk = _extract_balanced_json_object(t)
     if not chunk:
         m = _JSON_RE.search(t)
@@ -66,13 +90,20 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
             chunk = m.group(0)
     if not chunk:
         return None
-        
+
+    chunk = _fix_trailing_commas(chunk)
+
     try:
         obj = json.loads(chunk)
         if isinstance(obj, dict):
             return obj
     except Exception:
-        return None
+        pass
+
+    obj3 = _try_literal_eval_dict(chunk)
+    if obj3:
+        return obj3
+
     return None
 
 
