@@ -228,7 +228,8 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
 
         with st.spinner("Metin çıkarılıyor ve bağlam parçaları oluşturuluyor..."):
             text = load_file(tmp_path)
-            paragraphs = extract_context_chunks(text)
+            preprocessing_metrics = {}
+            paragraphs = extract_context_chunks(text, metrics=preprocessing_metrics)
 
         if not paragraphs:
             st.session_state.last_quiz = None
@@ -247,6 +248,7 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                         fill_count=fill_count,
                         open_count=open_count,
                         difficulty=difficulty,
+                        preprocessing_metrics=preprocessing_metrics,
                     )
                 )
                 
