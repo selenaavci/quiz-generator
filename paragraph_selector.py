@@ -127,7 +127,7 @@ def is_good_fill_sentence(sentence: str) -> bool:
     if s.count(";") >= 2 or s.count(",") >= 6:
         return False
 
-    if not (re.search(r"b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b", s) or re.search(r"“.+?”|\".+?\"|\(.+?\)", s)):
+    if not (re.search(r"\b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b", s) or re.search(r"“.+?”|\".+?\"|\(.+?\)", s)):
         if not (" olarak " in s.lower() or " is " in s.lower() or " are " in s.lower()):
             return False
 
