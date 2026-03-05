@@ -41,6 +41,7 @@ class MistralClient:
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "response_format": {"type": "json_object"},
         }
 
         headers = {
