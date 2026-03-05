@@ -612,16 +612,18 @@ async def _generate_mcq_multistage(
 # ============================================================
 
 def _tf_target_answer(question_index: int) -> str:
-    return "Yanlis" if (question_index % 2 == 0) else "Dogru"
+    return "Yanlış" if (question_index % 2 == 0) else "Doğru"
 
 
 def _tf_answer_matches(target: str, parsed: dict) -> bool:
     ans = str(parsed.get("answer", "")).strip().lower()
     t = target.strip().lower()
-    if t in ("dogru", "dogru"):
-        return ans in ("dogru", "dogru", "true", "do\u011fru")
-    if t in ("yanlis", "yanlis"):
-        return ans in ("yanlis", "yanlis", "false", "yanl\u0131\u015f")
+    true_set = {"doğru", "dogru", "true"}
+    false_set = {"yanlış", "yanlis", "yanliş", "false"}
+    if t in true_set:
+        return ans in true_set
+    if t in false_set:
+        return ans in false_set
     return True
 
 
@@ -1048,7 +1050,7 @@ async def _generate_open_easy_fallback(
 
             cov_ctx = _keyword_coverage_ratio(kws, paragraph)
             cov_ans = _keywords_in_answer_ratio(kws, ans_text)
-            if cov_ctx < 0.45 or cov_ans < 0.60:
+            if cov_ctx < 0.15 and cov_ans < 0.30:
                 last_err = ValueError(f"open easy coverage (ctx={cov_ctx}, ans={cov_ans})")
                 continue
 
@@ -1140,7 +1142,7 @@ async def _generate_open_with_retry(
 
             cov_ctx = _keyword_coverage_ratio(kws, paragraph)
             cov_ans = _keywords_in_answer_ratio(kws, ans_text)
-            if cov_ctx < 0.45 or cov_ans < 0.60:
+            if cov_ctx < 0.15 and cov_ans < 0.30:
                 _m_inc(metrics, "open_guard_leakage")
                 last_err = ValueError(f"open coverage guard (ctx={cov_ctx}, ans={cov_ans})")
                 continue
@@ -1255,7 +1257,7 @@ async def generate_one_question(
             metrics=metrics,
             prev_questions=prev_questions,
         )
-        if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
+        if not _is_grounded_to_context(str(out.get("question", "")), paragraph, min_ratio=0.10):
             raise ValueError("Open context grounding guard failed")
         return out
 

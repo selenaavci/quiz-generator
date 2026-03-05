@@ -153,9 +153,16 @@ def parse_true_false(text: str) -> dict:
 
     try:
         question = re.search(r"Soru:\s*(.+)", text).group(1).strip()
-        answer = re.search(r"Cevap:\s*(Doğru|Yanlış)", text).group(1).strip()
+        answer_match = re.search(r"Cevap:\s*(Doğru|Yanlış|Dogru|Yanlis|True|False)", text, re.IGNORECASE)
+        if not answer_match:
+            raise ValueError("Cevap satiri bulunamadi")
+        raw_answer = answer_match.group(1).strip().lower()
+        if raw_answer in ("doğru", "dogru", "true"):
+            answer = "Doğru"
+        else:
+            answer = "Yanlış"
 
-        explanation_match = re.search(r"Açıklama:\s*(.+)", text, re.DOTALL)
+        explanation_match = re.search(r"(?:Açıklama|Aciklama):\s*(.+)", text, re.DOTALL | re.IGNORECASE)
         explanation = explanation_match.group(1).strip() if explanation_match else ""
 
         return {
