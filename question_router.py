@@ -121,6 +121,10 @@ def _difficulty_value_balanced(difficulty: Union[int, str], i: int, metrics: dic
 _PUNCT_TABLE = str.maketrans("", "", string.punctuation + "“”’‘…•–—")
 _WS_RE = re.compile(r"\s+")
 
+_GROUND_STOPWORDS = {
+    "ve", "veya", "ile", "bir", "bu", "şu", "o", "için", "olarak", "gibi", "de", "da",
+    "mi", "mı", "mu", "mü", "the", "is", "are", "of", "in", "and", "to"
+}
 
 def _normalize_text(s: str) -> str:
     if not s:
@@ -146,6 +150,26 @@ def _too_similar(new_q: str, seen_norms: List[str], threshold: float = 0.92) -> 
         if j >= threshold:
             return True
     return False
+
+
+def _is_grounded_to_context(question_text: str, context: str, min_ratio: float = 0.18) -> bool:
+    q_tokens = [
+        w for w in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", (question_text or "").lower())
+        if w not in _GROUND_STOPWORDS
+    ]
+    c_tokens = set([
+        w for w in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", (context or "").lower())
+        if w not in _GROUND_STOPWORDS
+    ])
+
+    if not q_tokens:
+        return False
+    if not c_tokens:
+        return True
+
+    overlap = sum(1 for w in q_tokens if w in c_tokens)
+    ratio = overlap / max(len(q_tokens), 1)
+    return ratio >= min_ratio
 
 
 def _m_inc(metrics: dict, key: str, n: int = 1) -> None:
@@ -1086,7 +1110,10 @@ async def generate_one_question(
 
     if qtype == "mcq":
         try:
-            return await _generate_mcq_multistage(client, paragraph, d, metrics)
+            out = await _generate_mcq_multistage(client, paragraph, d, metrics)
+            if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
+                raise ValueError("MCQ context grounding guard failed")
+            return out
         except Exception:
             _m_inc(metrics, "mcq_fallback_legacy")
             _m_inc(metrics, "mcq_multistage_fail")
@@ -1101,6 +1128,8 @@ async def generate_one_question(
             out = parse_mcq(raw2)
         
         if isinstance(out, dict):
+            if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
+                raise ValueError("MCQ legacy context grounding guard failed")
             out["difficulty"] = int(d)
         return out
 
@@ -1114,6 +1143,8 @@ async def generate_one_question(
                 question_index=(tf_index if tf_index is not None else question_index),
                 metrics=metrics
             )
+            if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
+                raise ValueError("TF context grounding guard failed")
             _m_inc(metrics, "tf_success")
             return out
         except Exception:
@@ -1130,6 +1161,8 @@ async def generate_one_question(
                 question_index=question_index,
                 metrics=metrics
             )
+            if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
+                raise ValueError("Fill context grounding guard failed")
             _m_inc(metrics, "fill_success")
             return out
         except Exception:
@@ -1137,13 +1170,16 @@ async def generate_one_question(
             raise
 
     if qtype == "open":
-        return await _generate_open_with_retry(
+        out = await _generate_open_with_retry(
             client=client,
             paragraph=paragraph,
             difficulty_setting=d,
             question_index=question_index,
             metrics=metrics
         )
+        if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
+            raise ValueError("Open context grounding guard failed")
+        return out
 
     raise ValueError(f"Unknown question type: {qtype}")
 
@@ -1398,7 +1434,7 @@ async def generate_quiz(
                 })
 
             elif qtype == "open":
-                quiz.append({
+                 quiz.append({
                     "type": "open",
                     "question": f"Metindeki temel noktaları kendi cümlelerinle açıklayın: \"{base_short}\"",
                     "keywords": _derive_open_keywords(base_short, paragraph, limit=6) or ["temel", "kavram", "açıklama"],
@@ -1413,6 +1449,10 @@ async def generate_quiz(
                     "error": f"Unknown question type or generation failed: {qtype} | last_err={last_err}",
                     "source": (paragraph[:200] + "...") if paragraph else ""
                 })
+
+            source_use_count[src_sig] = int(source_use_count.get(src_sig, 0)) + 1
+            recent_sources.append(src_sig)
+            all_used_sources.append(src_sig)
 
     total_sources = len(paragraphs)
     unique_used = len(set(all_used_sources))
