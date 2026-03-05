@@ -450,7 +450,7 @@ def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
     if len(set(values)) < 4:
         return False
 
-    if _options_too_similar(options, threshold=0.80):
+    if _options_too_similar(options, threshold=0.90):
         return False
 
     banned = ("hepsi", "yukarıdakilerin hepsi", "hiçbiri", "all of the above", "none of the above")
@@ -478,7 +478,6 @@ def _mcq_verify_is_blocking(verify: Dict[str, Any]) -> bool:
         "not in context",
         "halluc",
         "contradict",
-        "yanlış",
         "bağlam dışı",
         "uyuşm",
     ]
@@ -552,9 +551,16 @@ async def _generate_mcq_multistage(
         )
         d2 = parse_mcq_stage2(raw2)
         distractors = d2.get("distractors") or []
+        
+        if isinstance(distractors, dict):
+            distractors = list(distractors.values())
+        elif not isinstance(distractors, list):
+            distractors = []
+            
         distractors = [str(x).strip() for x in distractors if str(x).strip()]
-        if len(distractors) != 3:
+        if len(distractors) < 3:
             continue
+        distractors = distractors[:3]
 
         mcq = _assemble_mcq(question, correct_answer, distractors)
 
