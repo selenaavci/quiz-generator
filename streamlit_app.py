@@ -94,6 +94,26 @@ def inject_css():
     )
 
 
+def _safe_filename(value: str) -> str:
+    cleaned = " ".join(str(value or "").strip().split())
+    cleaned = cleaned.replace("/", "-").replace("\\", "-").replace(":", "-")
+    cleaned = cleaned.replace("*", "").replace("?", "").replace('"', "")
+    cleaned = cleaned.replace("<", "").replace(">", "").replace("|", "-")
+    return cleaned[:120].strip()
+
+
+def _build_export_filename(konu: str, difficulty: str) -> str:
+    konu_clean = _safe_filename(konu)
+    diff_clean = _safe_filename(str(difficulty).lower())
+
+    if not konu_clean:
+        return "quiz"
+
+    if diff_clean:
+        return f"{konu_clean} {diff_clean} seviye quiz"
+
+    return f"{konu_clean} quiz"
+
 # ---------------- Page Config ----------------
 st.set_page_config(
     page_title="Odeabank | AI Quiz Generator",
@@ -318,11 +338,13 @@ if st.session_state.last_quiz:
 if st.session_state.last_quiz or st.session_state.last_metrics:
     st.markdown("### 📥 İndir")
 
+export_base_name = _build_export_filename(konu=konu, difficulty=difficulty)
+
 if st.session_state.last_quiz:
     st.download_button(
         "JSON indir",
         data=json.dumps(st.session_state.last_quiz, ensure_ascii=False, indent=2),
-        file_name="quiz.json",
+        file_name=f"{export_base_name}.json",
         mime="application/json",
         use_container_width=True,
     )
@@ -337,7 +359,7 @@ if st.session_state.last_metrics or st.session_state.last_quiz:
         hazirlayan=hazirlayan or "OdeaMind",
     )
     quiz_for_export = st.session_state.last_quiz or []
-    file_name = "quiz_with_metrics.xlsx" if st.session_state.last_quiz else "quiz_metrics.xlsx"
+    file_name = f"{export_base_name}.xlsx"
 
     try:
         with st.spinner("Excel hazırlanıyor..."):
