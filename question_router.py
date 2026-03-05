@@ -881,7 +881,7 @@ async def _generate_fill_with_retry(
             _m_inc(metrics, "fill_quality_fail")
 
         except Exception as e:
-             _m_inc(metrics, "fill_parse_fail")
+            _m_inc(metrics, "fill_parse_fail")
             last_err = e
 
     raise ValueError(f"Fill üretimi başarısız (retry sonrası): {last_err} | raw_preview={last_raw_preview}")
