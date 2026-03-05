@@ -329,7 +329,7 @@ if st.session_state.last_quiz:
         if q.get("explanation"):
             st.caption(q["explanation"])
 
-        src = q.get("source_preview") or q.get("source") or q.get("context")
+        src = q.get("source_preview") or q.get("source") or q.get("context") or ""
         if src:
             with st.expander("Kaynak (preview)"):
                 st.write(src)

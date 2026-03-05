@@ -1,4 +1,5 @@
 import re
+import random
 from typing import Any, Dict, List, Optional
 
 
@@ -77,7 +78,7 @@ def chunk_paragraph_with_overlap(paragraph: str, max_words=250, overlap_words=40
     return chunks
 
 
-def extract_context_chunks(text: str, max_words: int = 250, min_words: int = 40, overlap_words: int = 0, metrics: Dict[str, Any] = None):
+def extract_context_chunks(text: str, max_words: int = 200, min_words: int = 40, overlap_words: int = 30, metrics: Dict[str, Any] = None):
     paragraphs = split_paragraphs(text)
 
     if metrics is not None:
@@ -96,13 +97,27 @@ def extract_context_chunks(text: str, max_words: int = 250, min_words: int = 40,
             chunks = chunk_paragraph(para, max_words=max_words)
         all_chunks.extend(chunks)
 
+    # Kısa ve anlamsız chunkları filtrele
+    filtered = []
+    for chunk in all_chunks:
+        wc = len(chunk.split())
+        if wc >= 20:
+            filtered.append(chunk)
+        elif wc >= 10:
+            # Çok kısa ama tanım içeriyorsa kabul et
+            low = chunk.lower()
+            if any(kw in low for kw in ["denir", "olarak", "tanımlan", "ifade eder", "şudur"]):
+                filtered.append(chunk)
+
+    all_chunks = filtered if filtered else all_chunks
+
     if metrics is not None:
         metrics["preprocessing_selected_paragraphs"] = len(all_chunks)
 
     return all_chunks
 
 
-# Fill Sentence Selection 
+# Fill Sentence Selection
 def split_into_sentences(text: str) -> List[str]:
     text = text.replace("\n", " ").strip()
     sentences = re.split(r'(?<=[.!?])\s+', text)
@@ -127,7 +142,7 @@ def is_good_fill_sentence(sentence: str) -> bool:
     if s.count(";") >= 2 or s.count(",") >= 6:
         return False
 
-    if not (re.search(r"\b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b", s) or re.search(r"“.+?”|\".+?\"|\(.+?\)", s)):
+    if not (re.search(r"\b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b", s) or re.search(r"\".+?\"|\".+?\"|\(.+?\)", s)):
         if not (" olarak " in s.lower() or " is " in s.lower() or " are " in s.lower()):
             return False
 

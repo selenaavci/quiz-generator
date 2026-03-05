@@ -9,11 +9,13 @@ GENEL KURALLAR:
 - Daha önce sorulmuş sorularla aynı/çok benzer sorular üretme.
 
 SORU ÇEŞİTLİLİĞİ:
-- Eğer metin uygunsa:
-    -tanım sorusu
-    -amaç/sonuç sorusu
+- Eğer metin uygunsa aşağıdaki türler arasında çeşitlilik sağla:
+    - tanım sorusu
+    - amaç/sonuç sorusu
     - istisna veya yanlış çıkarım sorusu
-    arasında çeşitlilik sağla.
+    - karşılaştırma sorusu
+    - süreç/adım sorusu
+- Daha önce üretilen sorularla aynı kavramı veya aynı cümleyi tekrar sorgulama.
 
 ZORLUK:
 - Zorluk seviyesi 1-5 arası düşünülmelidir.
