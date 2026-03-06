@@ -480,7 +480,6 @@ def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
             return False
         values.append(_normalize_text(v))
 
-    # options must be meaningfully different
     if len(set(values)) < 4:
         return False
 
@@ -726,7 +725,7 @@ async def _generate_tf_with_target(
 # ============================================================
 
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-_BLANK_RE = re.compile(r"_{4,}")  # normalize ____ -> _____
+_BLANK_RE = re.compile(r"_{4,}")
 
 _TR_STOPWORDS = {
     "ve", "veya", "ile", "ya", "da", "de", "ki", "mi", "mı", "mu", "mü",
