@@ -2,7 +2,6 @@ import re
 import random
 import string
 import hashlib
-import unicodedata
 from typing import List, Tuple, Dict, Any, Union
 
 from prompts import (
@@ -115,12 +114,6 @@ def _difficulty_value_balanced(difficulty: Union[int, str], i: int, metrics: dic
         return _pick_balanced_from_band(str(difficulty), i, metrics)
 
 
-
-def _nfc(s: str) -> str:
-    # PDF text extraction sometimes yields decomposed unicode (e.g., ö instead of ö).
-    # NFC normalization makes token overlap/grounding guards behave correctly.
-    return unicodedata.normalize("NFC", s or "")
-
 # ============================================================
 # Text normalization & dedup helpers & Mutlak ifade
 # ============================================================
@@ -136,7 +129,7 @@ _GROUND_STOPWORDS = {
 def _normalize_text(s: str) -> str:
     if not s:
         return ""
-    s = _nfc(s).lower().translate(_PUNCT_TABLE)
+    s = s.lower().translate(_PUNCT_TABLE)
     s = _WS_RE.sub(" ", s).strip()
     return s
 
@@ -160,15 +153,12 @@ def _too_similar(new_q: str, seen_norms: List[str], threshold: float = 0.92) -> 
 
 
 def _is_grounded_to_context(question_text: str, context: str, min_ratio: float = 0.18) -> bool:
-    qt = _nfc(question_text or "")
-    ct = _nfc(context or "")
-
     q_tokens = [
-        w for w in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", qt.lower())
+        w for w in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", (question_text or "").lower())
         if w not in _GROUND_STOPWORDS
     ]
     c_tokens = set([
-        w for w in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", ct.lower())
+        w for w in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", (context or "").lower())
         if w not in _GROUND_STOPWORDS
     ])
 
@@ -362,27 +352,14 @@ def _build_type_plan(mcq_count: int, tf_count: int, fill_count: int, open_count:
     return order
 
 
-def _select_best_paragraph(
-    paragraphs: List[str],
-    qtype: str,
-    cursor: int,
-    recent_sources: List[str] | None = None,
-    source_use_count: Dict[str, int] | None = None,
-    max_per_source: int = 999,
-    cooldown_k: int = 0,
-) -> Tuple[str, int]:
-    """Choose best paragraph in a sliding window, but *prefer diversity*.
-
-    The previous version always picked the top-scoring paragraph, which in short/structured
-    docs caused extreme reuse (and then repeated guard failures). This version penalizes
-    recently-used or overused sources inside the window so we rotate across chunks.
+def _select_best_paragraph(paragraphs: List[str], qtype: str, cursor: int) -> Tuple[str, int]:
+    """
+    Choose best paragraph in a sliding window.
+    window_size increased for short/repetitive docs.
     """
     n = len(paragraphs)
     if n == 0:
         return "", cursor
-
-    recent_sources = recent_sources or []
-    source_use_count = source_use_count or {}
 
     window_size = min(16, n)
     candidates = []
@@ -390,23 +367,12 @@ def _select_best_paragraph(
         idx = (cursor + k) % n
         para = paragraphs[idx]
         s = _score_paragraph_for_type(para, qtype)
-
-        sig = _signature(para)
-        used = int(source_use_count.get(sig, 0))
-
-        penalty = 0.0
-        if cooldown_k > 0 and sig in recent_sources[-cooldown_k:]:
-            penalty += 6.0
-        if used >= max_per_source:
-            penalty += 10.0
-
-        candidates.append((s - penalty, idx, para))
+        candidates.append((s, idx, para))
 
     candidates.sort(key=lambda x: x[0], reverse=True)
     _, best_idx, best_para = candidates[0]
     next_cursor = (best_idx + 1) % n
     return best_para, next_cursor
-
 
 
 # ============================================================
@@ -480,6 +446,7 @@ def _mcq_is_valid(mcq: Dict[str, Any]) -> bool:
             return False
         values.append(_normalize_text(v))
 
+    # options must be meaningfully different
     if len(set(values)) < 4:
         return False
 
@@ -558,8 +525,7 @@ async def _generate_mcq_multistage(
     answer_type = str(core.get("answer_type", "definition")).strip()
 
     if not question or not correct_answer:
-        _m_inc(metrics, "mcq_stage1_parse_fail")
-        raise ValueError(f"MCQ stage1 failed: question/correct empty | raw1={(raw1 or "")[:220]}")
+        raise ValueError("MCQ stage1 failed: question or correct_answer empty")
 
     last_verify = None
 
@@ -605,7 +571,7 @@ async def _generate_mcq_multistage(
         last_verify = verify
 
         if isinstance(verify, dict) and verify.get("pass") is False:
-            _m_inc("mcq_verify_fail")
+            _m_inc(metrics, "mcq_verify_fail")
 
         fix = ""
         if isinstance(verify, dict):
@@ -725,7 +691,7 @@ async def _generate_tf_with_target(
 # ============================================================
 
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-_BLANK_RE = re.compile(r"_{4,}")
+_BLANK_RE = re.compile(r"_{4,}")  # normalize ____ -> _____
 
 _TR_STOPWORDS = {
     "ve", "veya", "ile", "ya", "da", "de", "ki", "mi", "mı", "mu", "mü",
@@ -1181,19 +1147,29 @@ async def generate_one_question(
             _m_inc(metrics, "mcq_multistage_fail")
 
             legacy_prompt = prompt_mcq(paragraph, difficulty=d)
-        raw = await _llm_generate(client, metrics, messages=[{"role": "user", "content": legacy_prompt}])
-        try:
-            out = parse_mcq(raw)
-        except Exception:
-            retry_prompt = prompt_mcq(paragraph, difficulty=d)
-            raw2 = await _llm_generate(client, metrics, messages=[{"role": "user", "content": retry_prompt}], temperature=0.1, max_tokens=650)
-            out = parse_mcq(raw2)
-        
-        if isinstance(out, dict):
-            if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
-                raise ValueError("MCQ legacy context grounding guard failed")
-            out["difficulty"] = int(d)
-        return out
+            raw = await _llm_generate(
+                client,
+                metrics,
+                messages=[{"role": "user", "content": legacy_prompt}],
+            )
+            try:
+                out = parse_mcq(raw)
+            except Exception:
+                retry_prompt = prompt_mcq(paragraph, difficulty=d)
+                raw2 = await _llm_generate(
+                    client,
+                    metrics,
+                    messages=[{"role": "user", "content": retry_prompt}],
+                    temperature=0.1,
+                    max_tokens=650,
+                )
+                out = parse_mcq(raw2)
+
+            if isinstance(out, dict):
+                if not _is_grounded_to_context(str(out.get("question", "")), paragraph):
+                    raise ValueError("MCQ legacy context grounding guard failed")
+                out["difficulty"] = int(d)
+            return out
 
     if qtype == "tf":
         _m_inc(metrics, "tf_total")
@@ -1275,8 +1251,6 @@ def _init_metrics() -> dict:
         "mcq_verify_fail": 0,
         "mcq_option_guard_fail": 0,
         "mcq_rewrite_question_suggested": 0,
-        "mcq_stage1_parse_fail": 0,
-        "fill_parse_fail": 0,
 
         "tf_total": 0,
         "tf_success": 0,
@@ -1343,20 +1317,21 @@ async def generate_quiz(
 
     if metrics is None:
         metrics = _init_metrics()
-
+    
     type_plan = _build_type_plan(mcq_count, tf_count, fill_count, open_count)
 
     seen_question_sigs = set()
     seen_question_norms: List[str] = []
     seen_source_sigs = set()
+
+    cursor = 0
+    tf_counter = 0
+
+    source_use_count: Dict[str, int] = {}
     recent_sources: List[str] = []
     all_used_sources: List[str] = []
 
-    tf_counter = 0
-    source_use_count: Dict[str, int] = {}
-
     n_par = len(paragraphs)
-    cursor = 0
     MAX_PER_SOURCE = 2 if n_par >= 12 else 3
     COOLDOWN_K = 4 if n_par >= 12 else 2
     SIM_THRESHOLD = 0.92 if n_par >= 12 else 0.95
@@ -1365,7 +1340,6 @@ async def generate_quiz(
         max_tries = 8
         tries = 0
         last_err = None
-        failed_sources_for_this_question = set()
 
         while tries < max_tries:
             tries += 1
@@ -1373,27 +1347,7 @@ async def generate_quiz(
             if tries > 1:
                 _m_inc(metrics, "question_generation_retry_count")
 
-            paragraph = None
-            local_cursor = cursor
-            for _ in range(n_par):
-                candidate, local_cursor = _select_best_paragraph(
-                    paragraphs,
-                    qtype,
-                    local_cursor,
-                    recent_sources=recent_sources,
-                    source_use_count=source_use_count,
-                    max_per_source=MAX_PER_SOURCE,
-                    cooldown_k=COOLDOWN_K,
-                )
-                if not candidate:
-                    continue
-                cand_sig = _signature(candidate)
-                if cand_sig in failed_sources_for_this_question:
-                    continue
-                paragraph = candidate
-                cursor = local_cursor
-                break
-
+            paragraph, cursor = _select_best_paragraph(paragraphs, qtype, cursor)
             if not paragraph:
                 last_err = ValueError("Selected paragraph is empty")
                 continue
@@ -1402,15 +1356,15 @@ async def generate_quiz(
             src_sig = _signature(paragraph)
             used = int(source_use_count.get(src_sig, 0))
 
-            if tries <= 3 and tries < max_tries - 1 and src_sig in recent_sources[-COOLDOWN_K:]:
-                _m_inc(metrics, "skip_recent_source")
-                failed_sources_for_this_question.add(src_sig)
-                continue
+            if tries <= 3 and tries < max_tries - 1:
+                if src_sig in recent_sources[-COOLDOWN_K:]:
+                    _m_inc(metrics, "skip_recent_source")
+                    continue
 
-            if used >= MAX_PER_SOURCE and tries < max_tries - 1:
-                _m_inc(metrics, "skip_max_per_source")
-                failed_sources_for_this_question.add(src_sig)
-                continue
+            if used >= MAX_PER_SOURCE:
+                if tries < max_tries - 1:
+                    _m_inc(metrics, "skip_max_per_source")
+                    continue
 
             tf_local_index = None
             if qtype == "tf":
@@ -1418,7 +1372,6 @@ async def generate_quiz(
                 tf_local_index = tf_counter
 
             if qtype in ("mcq", "fill", "open") and tries <= 3 and (src_sig in seen_source_sigs):
-                failed_sources_for_this_question.add(src_sig)
                 continue
 
             try:
@@ -1429,28 +1382,28 @@ async def generate_quiz(
                     difficulty_setting=difficulty,
                     question_index=i * 10 + tries,
                     tf_index=tf_local_index,
-                    metrics=metrics,
+                    metrics=metrics
                 )
 
                 q_text = str(q.get("question", "")).strip()
                 if not q_text:
-                    failed_sources_for_this_question.add(src_sig)
                     last_err = ValueError("Generated question text is empty")
                     continue
 
                 q_norm = _normalize_text(q_text)
                 q_sig = _signature(q_norm)
 
+                # Hard dedup
                 if q_sig in seen_question_sigs:
-                    failed_sources_for_this_question.add(src_sig)
-                    last_err = ValueError("Duplicate question generated")
                     continue
 
+                # Near-duplicate guard
                 if seen_question_norms and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
                     _m_inc(metrics, "skip_too_similar")
-                    failed_sources_for_this_question.add(src_sig)
-                    last_err = ValueError("Too similar question generated")
                     continue
+                    
+                if q.get("type") == "open":
+                    q.pop("answer", None)
 
                 q["source"] = src_preview
                 quiz.append(q)
@@ -1465,15 +1418,17 @@ async def generate_quiz(
 
                 seen_question_sigs.add(q_sig)
                 seen_question_norms.append(q_norm)
+
                 source_use_count[src_sig] = int(source_use_count.get(src_sig, 0)) + 1
                 recent_sources.append(src_sig)
                 all_used_sources.append(src_sig)
+
                 if qtype != "tf":
                     seen_source_sigs.add(src_sig)
+
                 break
 
             except Exception as e:
-                failed_sources_for_this_question.add(src_sig)
                 last_err = e
                 continue
 
@@ -1495,46 +1450,112 @@ async def generate_quiz(
                     "difficulty": 3,
                     "source": (paragraph[:200] + "...") if paragraph else ""
                 })
+
             elif qtype == "tf":
                 quiz.append({
                     "type": "true_false",
-                    "question": f"Metne göre şu çıkarım doğrudur: \"{base_short}\"",
+                    "question": f"\"{base_short}\" ifadesi metne göre doğru bir çıkarımdır.",
                     "answer": "Doğru",
                     "explanation": "",
                     "difficulty": 3,
                     "source": (paragraph[:200] + "...") if paragraph else ""
                 })
+
             elif qtype == "fill":
                 quiz.append({
                     "type": "fill",
-                    "question": "Metindeki temel kavramlardan biri _______ olarak ifade edilir.",
-                    "answer": "kavram",
+                    "question": f"\"{base_short}\" ifadesindeki temel kavram _______ olarak özetlenebilir.",
+                    "answer": "temel kavram",
                     "explanation": "",
                     "difficulty": 3,
                     "source": (paragraph[:200] + "...") if paragraph else ""
                 })
+
+            elif qtype == "open":
+                 quiz.append({
+                    "type": "open",
+                    "question": f"Metindeki temel noktaları kendi cümlelerinle açıklayın: \"{base_short}\"",
+                    "keywords": _derive_open_keywords(base_short, paragraph, limit=6) or ["temel", "kavram", "açıklama"],
+                    "explanation": "",
+                    "difficulty": 3,
+                    "source": (paragraph[:200] + "...") if paragraph else ""
+                })
+
             else:
                 quiz.append({
-                    "type": "open",
-                    "question": f"Metindeki temel noktaları, özellikle şu bölüm üzerinden açıklayınız: \"{base_short}\"",
-                    "answer": base_short,
-                    "keywords": [],
-                    "explanation": "",
-                    "difficulty": 3,
+                    "type": "error",
+                    "error": f"Unknown question type or generation failed: {qtype} | last_err={last_err}",
                     "source": (paragraph[:200] + "...") if paragraph else ""
                 })
 
-    total_q = len(quiz)
-    unique_sources = len(set(all_used_sources))
+            source_use_count[src_sig] = int(source_use_count.get(src_sig, 0)) + 1
+            recent_sources.append(src_sig)
+            all_used_sources.append(src_sig)
+
     total_sources = len(paragraphs)
+    unique_used = len(set(all_used_sources))
+    coverage_ratio = (unique_used / total_sources) if total_sources > 0 else 0.0
+
     metrics["coverage_total_sources"] = total_sources
-    metrics["coverage_unique_sources_used"] = unique_sources
-    metrics["coverage_ratio"] = round(unique_sources / max(total_sources, 1), 4)
-    metrics["coverage_per_question"] = round(unique_sources / max(total_q, 1), 4)
-    metrics["source_reuse_rate"] = round(1 - (unique_sources / max(total_q, 1)), 4)
+    metrics["coverage_unique_sources_used"] = unique_used
+    metrics["coverage_ratio"] = round(coverage_ratio, 4)
 
-    reuse_items = sorted(source_use_count.items(), key=lambda x: x[1], reverse=True)
-    metrics["coverage_top_reused"] = reuse_items[:5]
-    metrics["coverage_avg_reuse"] = round(sum(source_use_count.values()) / max(len(source_use_count), 1), 4)
+    total_questions = max(len(all_used_sources), 1)
+    metrics["coverage_per_question"] = round(unique_used / total_questions, 4)
+    metrics["source_reuse_rate"] = round(1.0 - (unique_used / total_questions), 4)
 
+    if all_used_sources:
+        top = sorted(source_use_count.items(), key=lambda x: x[1], reverse=True)[:5]
+        metrics["coverage_top_reused"] = top
+        metrics["coverage_avg_reuse"] = round(sum(source_use_count.values()) / max(unique_used, 1), 4)
+    else:
+        metrics["coverage_top_reused"] = []
+        metrics["coverage_avg_reuse"] = 0.0
+
+    print("METRICS: ", metrics)
     return quiz
+
+
+async def generate_quiz_with_metrics(
+    paragraphs: List[str],
+    mcq_count: int,
+    tf_count: int,
+    fill_count: int,
+    open_count: int = 0,
+    difficulty: Union[int, str] = "Orta",
+    preprocessing_metrics: Dict[str, Any] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+
+    metrics = _init_metrics()
+    metrics["preprocessing_selected_paragraphs"] = len(paragraphs or [])
+
+    if isinstance(preprocessing_metrics, dict):
+        for k in [
+            "preprocessing_total_paragraphs",
+            "preprocessing_merged_paragraphs",
+            "preprocessing_selected_paragraphs",
+        ]:
+            if k in preprocessing_metrics:
+                metrics[k] = int(preprocessing_metrics.get(k, 0))
+    elif paragraphs:
+        metrics["preprocessing_total_paragraphs"] = len(paragraphs)
+        metrics["preprocessing_merged_paragraphs"] = len(paragraphs)
+
+    try:
+        quiz = await generate_quiz(
+            paragraphs=paragraphs,
+            mcq_count=mcq_count,
+            tf_count=tf_count,
+            fill_count=fill_count,
+            open_count=open_count,
+            difficulty=difficulty,
+            metrics=metrics,
+        )
+        return quiz, metrics
+    except Exception as e:
+        err_quiz = [{
+            "type": "error",
+            "error": f"Quiz generation crashed: {e}"
+        }]
+        metrics["fatal_error"] = str(e)
+        return err_quiz, metrics
