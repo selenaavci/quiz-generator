@@ -77,7 +77,7 @@ JSON Şeması (BİREBİR):
   "explanation": "1-2 cümle kısa açıklama"
 }}
 
-SADECE JSON ÇIKTI ÜRET.
+SADECE JSON ÇIKTI ÜRET. JSON öncesi/sonrası hiçbir metin yazma.
 """.strip()
 
 
@@ -165,7 +165,7 @@ Girdi cümle:
 Girdi cümle:
 \"{sentence}\"
 
-SADECE JSON ÇIKTI ÜRET.
+SADECE JSON ÇIKTI ÜRET. JSON öncesi/sonrası hiçbir metin yazma.
     """.strip()
 
 
@@ -189,13 +189,16 @@ Kurallar:
 - "answer_type" şu kategorilerden biri olmalı:
   "definition" | "purpose" | "consequence" | "rule" | "exception" | "process" | "comparison"
 
-JSON:
+JSON (anahtar isimlerini aynen kullan):
 {{
   "question": "...?",
   "correct_answer": "...",
   "rationale": "...",
   "answer_type": "definition"
 }}
+- JSON öncesi veya sonrası TEK BİR KELİME bile yazma.
+- question mutlaka soru işareti ile bitsin.
+- correct_answer 1-8 kelime arası olsun.
 
 DİL HEDEFİ:
 - Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
@@ -273,10 +276,12 @@ Answer Type'a göre distractor stratejisi:
   Distractorlar:
   * karşılaştırılan unsurları karıştıran veya tersleyen ifadeler olmalı
 
-JSON:
+JSON (anahtar ismi aynen kullan):
 {{
   "distractors": ["...", "...", "..."]
 }}
+- JSON öncesi veya sonrası hiçbir açıklama yazma.
+- Her distractor kısa, tekil ve aynı kategori/formda olsun.
 
 DİL HEDEFİ:
 - Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
@@ -307,7 +312,7 @@ Kurallar:
 - Birden fazla doğru/çok belirsiz ise pass=false.
 - Şıklar çok benzer/kopya ise pass=false.
 
-JSON:
+JSON (anahtar isimlerini aynen kullan):
 {{
   "pass": true,
   "issues": ["..."],
@@ -316,6 +321,7 @@ JSON:
     "notes": "..."
   }}
 }}
+- JSON öncesi veya sonrası hiçbir açıklama yazma.
 
 DİL HEDEFİ:
 - Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
@@ -370,7 +376,7 @@ Metin:
 
 {rules}
 
-SADECE JSON ÇIKTI ÜRET.
+SADECE JSON ÇIKTI ÜRET. JSON öncesi/sonrası hiçbir metin yazma.
 """.strip()
 
 
@@ -403,5 +409,5 @@ Metin:
 
 {rules}
 
-SADECE JSON ÇIKTI ÜRET.
+SADECE JSON ÇIKTI ÜRET. JSON öncesi/sonrası hiçbir metin yazma.
 """.strip()
