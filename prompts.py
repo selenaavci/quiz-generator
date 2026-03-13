@@ -386,7 +386,7 @@ SADECE JSON ÇIKTI ÜRET.
 
 def prompt_open_ended_easy(context: str) -> str:
     return f"""
-Aşağıdaki metne dayanarak tek bir kısa açık uçlu soru üret.
+Aşağıdaki metne dayanarak basit ve net 1 açık uçlu soru üret.
 
 Metin:
 \"\"\"{context}\"\"\"
@@ -394,11 +394,9 @@ Metin:
 Kurallar:
 - YALNIZCA metne dayan.
 - Soru kısa ve net olsun.
-- Soru tek bir kavrama odaklansın.
-- Ardından soruyu 2-3 cümle ile cevapla.
-- "keywords" 3-5 adet olsun.
+- Sorudan sonra 2-3 cümlelik kısa cevap yaz.
+- 3-5 keyword üret.
 - Her keyword answer içinde aynen geçsin.
-- Genel kelimeler kullanma.
 - Çıktı SADECE JSON olsun.
 
 JSON:
