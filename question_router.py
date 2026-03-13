@@ -1376,6 +1376,7 @@ async def generate_quiz_with_metrics(
             paragraphs=paragraphs,
             mcq_count=mcq_count,
             tf_count=tf_count,
+            fill_count=fill_count,
             difficulty=difficulty,
             metrics=metrics,
         )
