@@ -163,19 +163,17 @@ total_questions = st.number_input(
     step=1,
 )
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3 = st.columns(3)
 with c1:
     mcq_checked = st.checkbox("Çoktan Seçmeli (MCQ)", value=True)
 with c2:
     tf_checked = st.checkbox("Doğru / Yanlış (TF)", value=True)
 with c3:
     fill_checked = st.checkbox("Boşluk Doldurma (Fill)", value=True)
-with c4:
-    open_checked = st.checkbox("Açık Uçlu (Open-ended)", value=True)
 
-mcq_count, tf_count, fill_count, open_count = distribute_total(
+mcq_count, tf_count, fill_count = distribute_total(
     int(total_questions),
-    enabled={"mcq": mcq_checked, "tf": tf_checked, "fill": fill_checked, "open": open_checked},
+    enabled={"mcq": mcq_checked, "tf": tf_checked, "fill": fill_checked},
 )
 
 st.markdown(
@@ -184,7 +182,6 @@ st.markdown(
       <div>Dağılım: MCQ <b>{mcq_count}</b></div>
       <div>TF <b>{tf_count}</b></div>
       <div>Fill <b>{fill_count}</b></div>
-      <div>Open <b>{open_count}</b></div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -205,11 +202,11 @@ if uploaded is None:
     st.info("Devam etmek için dosya yükleyin.")
     st.stop()
 
-if not (mcq_checked or tf_checked or fill_checked or open_checked):
-    st.warning("En az bir soru tipi seçmelisiniz (MCQ / TF / Fill / Open).")
+if not (mcq_checked or tf_checked or fill_checked):
+    st.warning("En az bir soru tipi seçmelisiniz (MCQ / TF / Fill).")
     st.stop()
 
-if (mcq_count + tf_count + fill_count + open_count) <= 0:
+if (mcq_count + tf_count + fill_count) <= 0:
     st.warning("Toplam soru sayısı en az 1 olmalı.")
     st.stop()
 
@@ -246,7 +243,6 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                         mcq_count=mcq_count,
                         tf_count=tf_count,
                         fill_count=fill_count,
-                        open_count=open_count,
                         difficulty=difficulty,
                         preprocessing_metrics=preprocessing_metrics,
                     )
@@ -322,13 +318,6 @@ if st.session_state.last_quiz:
         elif q.get("type") == "fill":
             if q.get("answer") is not None:
                 st.write("**Cevap:**", q.get("answer"))
-
-        elif q.get("type") in ("open", "open_ended", "oe"):
-            kws = q.get("keywords") or []
-            if isinstance(kws, list) and kws:
-                cleaned = [str(x).strip() for x in kws if str(x).strip()]
-                if cleaned:
-                    st.write("**Anahtar Kelimeler:**", "; ".join(cleaned))
 
         if q.get("explanation"):
             st.caption(q["explanation"])
