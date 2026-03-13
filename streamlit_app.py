@@ -268,7 +268,14 @@ if st.button("🚀 Quiz Oluştur", use_container_width=True):
                 st.session_state.last_quiz = quiz
                 st.session_state.last_metrics_status = "success"
                 st.session_state.last_error_message = None
-                st.success(f"✅ Quiz hazır! Toplam soru: {len(quiz)}")
+                skipped = 0
+                if isinstance(metrics, dict):
+                    skipped = int(metrics.get("skipped_questions", 0))
+                
+                if skipped > 0:
+                    st.success(f"✅ Quiz hazır! Üretilen soru: {len(quiz)} | Atlanan soru: {skipped}")
+                else:
+                    st.success(f"✅ Quiz hazır! Toplam soru: {len(quiz)}")
 
     finally:
         if tmp_path and os.path.exists(tmp_path):
