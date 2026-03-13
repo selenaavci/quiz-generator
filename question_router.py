@@ -11,7 +11,6 @@ from prompts import (
     prompt_mcq_stage1_core,
     prompt_mcq_stage2_distractors,
     prompt_mcq_stage3_verify,
-    prompt_open_ended,
 )
 from parser import (
     parse_mcq,
@@ -20,7 +19,6 @@ from parser import (
     parse_mcq_stage1,
     parse_mcq_stage2,
     parse_mcq_stage3,
-    parse_open_ended,
 )
 from oss_client import MistralClient
 
