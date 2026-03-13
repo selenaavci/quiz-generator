@@ -203,14 +203,6 @@ def quiz_to_excel_rows(quiz: List[Dict[str, Any]], meta: ExcelMeta) -> List[List
             if isinstance(item, dict) and item.get("error"):
                 continue
 
-        elif qtype in ("open", "open_ended", "oe"):
-            secenek_sayisi = 0
-            opt1 = opt2 = opt3 = opt4 = opt5 = ""
-            if isinstance(item, dict) and item.get("type") == "error":
-                continue
-            if isinstance(item, dict) and item.get("error"):
-                continue
-
         else:
             secenek_sayisi = 0
             opt1 = opt2 = opt3 = opt4 = opt5 = ""
@@ -219,11 +211,6 @@ def quiz_to_excel_rows(quiz: List[Dict[str, Any]], meta: ExcelMeta) -> List[List
             item,
             len(options) if qtype in ("mcq", "multiple_choice") else secenek_sayisi
         )
-
-        if qtype in ("open", "open_ended", "oe"):
-            kws = item.get("keywords") or []
-            kws = [str(x).strip() for x in kws if str(x).strip()]
-            dogru = "; ".join(kws)
 
         zorluk = _difficulty(item, meta)
 
@@ -292,7 +279,7 @@ def export_quiz_to_xlsx(
             if get_column_letter(cell.column) in wrap_cols:
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-    if isinstance(metrics, dict):
+    if metrics and isinstance(metrics, dict):
         mws = wb.create_sheet("Metrics")
         mws.append(["Metric", "Value"])
 

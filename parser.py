@@ -304,35 +304,3 @@ def parse_mcq_stage3(raw: str) -> Dict[str, Any]:
     return {"pass": passed, "issues": issues, "suggestion": {"fix": fix, "notes": notes}}
 
 
-def parse_open_ended(text: str) -> dict:
-    j = _extract_json(text)
-    if not j or not isinstance(j, dict):
-        raise ValueError("Open-ended parse edilemedi: JSON yok")
-
-    j.setdefault("type", j.get("type") or "open")
-
-    q = str(j.get("question", "")).strip()
-    ans = str(j.get("answer", "")).strip()
-    kws = j.get("keywords")
-
-    if not q:
-        raise ValueError("Open-ended parse edilemedi: question boş")
-    if not ans:
-        raise ValueError("Open-ended parse edilemedi: answer boş")
-    if not isinstance(kws, list):
-        raise ValueError("Open-ended parse edilemedi: keywords list değil")
-
-    keywords = []
-    for x in kws:
-        s = str(x).strip()
-        if s:
-            keywords.append(s)
-
-    if len(keywords) < 3:
-        raise ValueError("Open-ended parse edilemedi: keywords < 3")
-
-    j["question"] = q
-    j["answer"] = ans
-    j["keywords"] = keywords[:6]
-    j["explanation"] = str(j.get("explanation", "") or "")
-    return j

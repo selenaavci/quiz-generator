@@ -12,5 +12,5 @@ def load_txt(path: str) -> str:
             except:
                 pass
 
-    raise RuntimeError("TXT dısyası okunamadı (encoding sorunları)")
+    raise RuntimeError("TXT dosyası okunamadı (encoding sorunları)")
     

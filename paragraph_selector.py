@@ -44,9 +44,9 @@ def _looks_like_table_or_noise(text: str) -> bool:
     upper_tokens = sum(1 for w in words if len(w) >= 3 and w.isupper())
     upper_ratio = upper_tokens / max(len(words), 1)
 
-    if digit_ratio > 0.20:
+    if digit_ratio > 0.35:
         return True
-    if upper_ratio > 0.45:
+    if upper_ratio > 0.60:
         return True
 
     return False
@@ -200,9 +200,9 @@ def extract_context_chunks(
             continue
 
         wc = len(chunk.split())
-        if wc >= 18:
+        if wc >= 12:
             filtered.append(chunk)
-        elif wc >= 10:
+        elif wc >= 8:
             low = chunk.lower()
             if any(
                 kw in low

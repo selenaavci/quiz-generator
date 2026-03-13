@@ -41,10 +41,13 @@ def clean_extracted_text(text: str, min_repeated: int = 3) -> str:
     cleaned = []
     for original, s in zip(kept, norm):
         if 0 < len(s) <= 60 and counts[s] >= min_repeated:
+            # Sadece sayı olan satırları her zaman at
             if _ONLY_NUMBER_LINE.match(original.strip()):
                 continue
+            # Kısa ve küçük harf içermeyen satırları at (büyük harf header vb.)
             if len(s) <= 6 and not re.search(r"[a-zçğıöşü]", s):
                 continue
+            # Geriye kalan tekrarlanan satırları da at (watermark, footer vb.)
             continue
 
         cleaned.append(original)

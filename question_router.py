@@ -4,6 +4,8 @@ import string
 import hashlib
 from typing import List, Tuple, Dict, Any, Union, Optional
 
+import logging
+
 from prompts import (
     prompt_mcq,
     prompt_true_false,
@@ -20,11 +22,14 @@ from parser import (
     parse_mcq_stage2,
     parse_mcq_stage3,
 )
+
+log = logging.getLogger(__name__)
 from oss_client import MistralClient
 
 try:
     from paragraph_selector import pick_fill_sentence
-except Exception:
+except Exception as _imp_err:
+    log.warning("paragraph_selector.pick_fill_sentence import failed: %s", _imp_err)
     pick_fill_sentence = None
 
 
@@ -309,29 +314,19 @@ def _score_paragraph_for_type(paragraph: str, qtype: str) -> float:
         if any(x in low for x in ["denir", "olarak", "ifade eder", "tanımlanır", "amacı", "sağlar"]):
             score += 2.5
 
-    elif qtype == "open":
-        if wc < 45:
-            score -= 3.0
-        if listy:
-            score -= 2.0
-        if any(x in low for x in ["örnek", "uygulama", "senaryo", "koşul", "şart", "durum", "nasıl", "neden"]):
-            score += 2.5
-        if def_hits > 0:
-            score -= 1.0
-
     return score
 
 
-def _build_type_plan(mcq_count: int, tf_count: int, fill_count: int, open_count: int = 0) -> List[str]:
-    if mcq_count < 0 or tf_count < 0 or fill_count < 0 or open_count < 0:
+def _build_type_plan(mcq_count: int, tf_count: int, fill_count: int) -> List[str]:
+    if mcq_count < 0 or tf_count < 0 or fill_count < 0:
         raise ValueError("Soru sayıları negatif olamaz.")
 
-    types = (["mcq"] * mcq_count) + (["tf"] * tf_count) + (["fill"] * fill_count) + (["open"] * open_count)
+    types = (["mcq"] * mcq_count) + (["tf"] * tf_count) + (["fill"] * fill_count)
     if not types:
         return []
 
-    counts = {"mcq": mcq_count, "tf": tf_count, "fill": fill_count, "open": open_count}
-    priority = {"mcq": 3, "tf": 2, "fill": 1, "open": 0}  
+    counts = {"mcq": mcq_count, "tf": tf_count, "fill": fill_count}
+    priority = {"mcq": 3, "tf": 2, "fill": 1}
 
     order: List[str] = []
     while sum(counts.values()) > 0:
@@ -340,7 +335,7 @@ def _build_type_plan(mcq_count: int, tf_count: int, fill_count: int, open_count:
             order.append(t)
             counts[t] -= 1
         else:
-            for k in ["mcq", "tf", "fill", "open"]:
+            for k in ["mcq", "tf", "fill"]:
                 if counts[k] > 0:
                     order.append(k)
                     counts[k] -= 1
@@ -363,7 +358,7 @@ def _select_best_paragraph(
     source_use_count = source_use_count or {}
     recent_sources = recent_sources or []
 
-    window_size = min(18, n)
+    window_size = n  # search all paragraphs for best coverage
     candidates = []
 
     for k in range(window_size):
@@ -372,10 +367,12 @@ def _select_best_paragraph(
         s = _score_paragraph_for_type(para, qtype)
         sig = _signature(para)
 
-        reuse_penalty = 0.9 * int(source_use_count.get(sig, 0))
-        recent_penalty = 1.5 if sig in recent_sources[-cooldown_k:] else 0.0
+        use_count = int(source_use_count.get(sig, 0))
+        reuse_penalty = 3.0 * use_count
+        recent_penalty = 2.5 if sig in recent_sources[-cooldown_k:] else 0.0
+        unused_bonus = 4.0 if use_count == 0 else 0.0
 
-        final_score = s - reuse_penalty - recent_penalty
+        final_score = s + unused_bonus - reuse_penalty - recent_penalty
         candidates.append((final_score, idx, para))
 
     candidates.sort(key=lambda x: x[0], reverse=True)
@@ -390,23 +387,12 @@ def _select_best_paragraph(
 
 def _assemble_mcq(question: str, correct_answer: str, distractors: List[str]) -> Dict[str, Any]:
     letters = ["A", "B", "C", "D"]
-    seed = _signature(f"{question}||{correct_answer}")
-    pos = int(seed[:8], 16) % 4
-
     all_opts = [correct_answer.strip()] + [d.strip() for d in distractors]
-    correct_text = all_opts[0]
-    wrongs = all_opts[1:]
+    random.shuffle(all_opts)
+    correct_text = correct_answer.strip()
+    pos = all_opts.index(correct_text)
 
-    arranged = [None] * 4
-    arranged[pos] = correct_text
-
-    wi = 0
-    for i in range(4):
-        if arranged[i] is None:
-            arranged[i] = wrongs[wi]
-            wi += 1
-
-    options = {letters[i]: arranged[i] for i in range(4)}
+    options = {letters[i]: all_opts[i] for i in range(4)}
     return {
         "type": "mcq",
         "question": question.strip(),
@@ -502,10 +488,6 @@ def _source_reuse_cap(total_sources: int, requested_questions: int) -> int:
     return 3
 
 
-def _separate_open_plan(mcq_count: int, tf_count: int, fill_count: int, open_count: int) -> List[str]:
-    core = _build_type_plan(mcq_count, tf_count, fill_count, 0)
-    return core + (["open"] * open_count)
-
 
 async def _generate_mcq_multistage(
     client: MistralClient,
@@ -551,7 +533,7 @@ async def _generate_mcq_multistage(
 
     last_verify = None
 
-    for attempt in range(1, 4):
+    for attempt in range(1, 5):
         if attempt > 1:
             _m_inc("mcq_regen_distractors")
 
@@ -571,7 +553,9 @@ async def _generate_mcq_multistage(
         d2 = parse_mcq_stage2(raw2)
         distractors = d2.get("distractors") or []
         distractors = [str(x).strip() for x in distractors if str(x).strip()]
-        if len(distractors) != 3:
+        if len(distractors) > 3:
+            distractors = distractors[:3]
+        if len(distractors) < 3:
             continue
 
         mcq = _assemble_mcq(question, correct_answer, distractors)
@@ -651,7 +635,7 @@ async def _generate_tf_with_target(
     last_err = None
     last_raw_preview = None
 
-    for attempt in range(1, 4):
+    for attempt in range(1, 5):
         try:
             base_prompt = prompt_true_false(paragraph, difficulty=d)
 
@@ -903,90 +887,6 @@ async def _generate_fill_with_retry(
 
     raise ValueError(f"Fill üretimi başarısız (retry sonrası): {last_err} | raw_preview={last_raw_preview}")
 
-# ============================================================
-# Open Ended
-# ============================================================
-
-_OPEN_BAD = {
-    "farklı", "bunlar", "olabilecek", "şekilde", "sayıda", "gibi", "bazı", "çeşitli",
-    "şey", "durum", "olan", "olup",
-    "farkli", "sekilde", "sayida", "bazi", "cesitli", "sey"
-}
-
-_OPEN_WORD = re.compile(r"^[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]+$")
-
-def _clean_open_keywords(keywords: List[str]) -> List[str]:
-    out = []
-    for kw in (keywords or []):
-        raw = str(kw).strip()
-        k = raw.lower()
-        if not k:
-            continue
-        if k in _OPEN_BAD:
-            continue
-        if len(k) <= 2:
-            continue
-        if len(k.split()) > 3:
-            continue
-        if " " not in k and not _OPEN_WORD.match(k):
-            continue
-        out.append(raw)
-
-    uniq = []
-    for x in out:
-        if x not in uniq:
-            uniq.append(x)
-    return uniq
-
-
-def _keyword_coverage_ratio(keywords: List[str], context: str) -> float:
-    c = (context or "").lower()
-    kws = _clean_open_keywords(keywords)
-    if not kws:
-        return 0.0
-
-    hit = 0
-    for kw in kws:
-        k = kw.strip().lower()
-        if re.search(rf"\b{re.escape(k)}\b", c):
-            hit += 1
-
-    return hit / max(len(kws), 1)
-
-
-def _keywords_in_answer_ratio(keywords: List[str], answer: str) -> float:
-    a = (answer or "").lower()
-    kws = _clean_open_keywords(keywords)
-    if not kws:
-        return 0.0
-
-    hit = 0
-    for kw in kws:
-        k = kw.strip().lower()
-        if re.search(rf"\b{re.escape(k)}\b", a):
-            hit += 1
-
-    return hit / max(len(kws), 1)
-
-
-def _derive_open_keywords(answer: str, context: str, limit: int = 6) -> List[str]:
-    tokens: List[str] = []
-    for blob in (answer or "", context or ""):
-        tokens.extend(re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9\-]{3,}", blob))
-
-    uniq = []
-    seen = set()
-    for token in tokens:
-        k = token.lower().strip()
-        if not k or k in seen:
-            continue
-        seen.add(k)
-        uniq.append(token.strip())
-
-    return _clean_open_keywords(uniq)[:limit]
-
-
-
 
 # ============================================================
 # Generation (single question)
@@ -1037,12 +937,25 @@ async def generate_one_question(
 
             if isinstance(out, dict):
                 q_text = str(out.get("question", "")).strip()
-                if _is_probablt_english(q_text):
+                if _is_probably_english(q_text):
                     _m_inc(metrics, "language_guard_triggered")
                     raise ValueError("MCQ legacy English output")
                 if not _is_grounded_to_context(q_text, paragraph, min_ratio=0.10):
                     raise ValueError("MCQ legacy context grounding guard failed")
                 out["difficulty"] = int(d)
+
+                # Shuffle correct answer position for legacy path
+                opts = out.get("options")
+                correct_key = str(out.get("correct", "")).strip().upper()
+                if isinstance(opts, dict) and correct_key in opts:
+                    correct_text = str(opts[correct_key]).strip()
+                    distractor_texts = [str(opts[k]).strip() for k in sorted(opts.keys()) if k != correct_key]
+                    if len(distractor_texts) == 3 and correct_text:
+                        out = _assemble_mcq(q_text, correct_text, distractor_texts)
+                        out["difficulty"] = int(d)
+                        if "explanation" not in out:
+                            out["explanation"] = ""
+
             return out
 
     if qtype == "tf":
@@ -1180,149 +1093,119 @@ async def generate_quiz(
     COOLDOWN_K = 3 if n_par >= 12 else 2
     SIM_THRESHOLD = 0.94 if n_par >= 12 else 0.96
 
-    for i, qtype in enumerate(type_plan, start=1):
-        max_tries =  5
-        tries = 0
-        last_err = None
-        paragraph = ""
+    total_requested = mcq_count + tf_count + fill_count
+    scarce = n_par < total_requested * 2
 
-        while tries < max_tries:
-            tries += 1
+    try:
+        for i, qtype in enumerate(type_plan, start=1):
+            max_tries = 10
+            tries = 0
+            last_err = None
+            paragraph = ""
 
-            if tries > 1:
-                _m_inc(metrics, "question_generation_retry_count")
+            while tries < max_tries:
+                tries += 1
 
-            paragraph, cursor = _select_best_paragraph(
-                paragraphs,
-                qtype,
-                cursor,
-                source_use_count=source_use_count,
-                recent_sources=recent_sources,
-                cooldown_k=COOLDOWN_K,
-            )
+                if tries > 1:
+                    _m_inc(metrics, "question_generation_retry_count")
 
-            if not paragraph:
-                last_err = ValueError("Selected paragraph is empty")
-                continue
-
-            src_preview = (paragraph[:200] + "...") if paragraph else ""
-            src_sig = _signature(paragraph)
-            used = int(source_use_count.get(src_sig, 0))
-
-            if tries <= 2 and src_sig in recent_sources[-COOLDOWN_K:]:
-                _m_inc(metrics, "skip_recent_source")
-                continue
-
-            if used >= MAX_PER_SOURCE and tries <= 4:
-                _m_inc(metrics, "skip_max_per_source")
-                continue
-
-            tf_local_index = None
-            if qtype == "tf":
-                tf_counter += 1
-                tf_local_index = tf_counter
-
-            if qtype in ("mcq", "fill") and tries <= 2 and (src_sig in seen_source_sigs):
-                continue
-
-            try:
-                q = await generate_one_question(
-                    client=client,
-                    qtype=qtype,
-                    paragraph=paragraph,
-                    difficulty_setting=difficulty,
-                    question_index=i * 10 + tries,
-                    tf_index=tf_local_index,
-                    metrics=metrics
+                paragraph, cursor = _select_best_paragraph(
+                    paragraphs,
+                    qtype,
+                    cursor,
+                    source_use_count=source_use_count,
+                    recent_sources=recent_sources,
+                    cooldown_k=COOLDOWN_K,
                 )
 
-                q_text = str(q.get("question", "")).strip()
-                if not q_text:
-                    last_err = ValueError("Generated question text is empty")
+                if not paragraph:
+                    last_err = ValueError("Selected paragraph is empty")
                     continue
 
-                q_norm = _normalize_text(q_text)
-                q_sig = _signature(q_norm)
-
-                if q_sig in seen_question_sigs:
-                    continue
-
-                if seen_question_norms and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
-                    _m_inc(metrics, "skip_too_similar")
-                    continue
-
-                q["source"] = src_preview
-                quiz.append(q)
-
-                dd = q.get("difficulty")
-                try:
-                    dd_int = int(dd)
-                except Exception:
-                    dd_int = None
-                if dd_int in (1, 2, 3, 4, 5):
-                    metrics[f"difficulty_count_{dd_int}"] = int(metrics.get(f"difficulty_count_{dd_int}", 0)) + 1
-
-                seen_question_sigs.add(q_sig)
-                seen_question_norms.append(q_norm)
-
-                source_use_count[src_sig] = int(source_use_count.get(src_sig, 0)) + 1
-                recent_sources.append(src_sig)
-                all_used_sources.append(src_sig)
-
-                if qtype != "tf":
-                    seen_source_sigs.add(src_sig)
-
-                break
-
-            except Exception as e:
-                last_err = e
-                continue
-
-        else:
-            base_short = (" ".join((paragraph or "").split())[:220]).strip()
-
-            if qtype == "mcq":
-                quiz.append({
-                    "type": "mcq",
-                    "question": f"Aşağıdaki ifadeye göre en doğru seçenek hangisidir?\n\"{base_short}\"",
-                    "options": {
-                        "A": "İfade metindeki ana ilkeyi doğru yansıtır.",
-                        "B": "İfade metindeki ana ilkeyi yanlış yansıtır.",
-                        "C": "İfade metinde hiç ele alınmayan bir konuyu içerir.",
-                        "D": "İfade metindeki koşulları ters yorumlar."
-                    },
-                    "correct": "A",
-                    "explanation": "",
-                    "difficulty": 3,
-                    "source": (paragraph[:200] + "...") if paragraph else ""
-                })
-
-            elif qtype == "tf":
-                quiz.append({
-                    "type": "true_false",
-                    "question": f"\"{base_short}\" ifadesi metne göre doğru bir çıkarımdır.",
-                    "answer": "Doğru",
-                    "explanation": "",
-                    "difficulty": 3,
-                    "source": (paragraph[:200] + "...") if paragraph else ""
-                })
-
-            elif qtype == "fill":
-                quiz.append({
-                    "type": "fill",
-                    "question": f"\"{base_short}\" ifadesindeki temel kavram _______ olarak özetlenebilir.",
-                    "answer": "temel kavram",
-                    "explanation": "",
-                    "difficulty": 3,
-                    "source": (paragraph[:200] + "...") if paragraph else ""
-                })
-
-            metrics["skipped_questions"] = int(metrics.get("skipped_questions", 0)) + 1
-            if paragraph:
+                src_preview = (paragraph[:200] + "...") if paragraph else ""
                 src_sig = _signature(paragraph)
-                source_use_count[src_sig] = int(source_use_count.get(src_sig, 0)) + 1
-                recent_sources.append(src_sig)
-                all_used_sources.append(src_sig)
+                used = int(source_use_count.get(src_sig, 0))
+
+                # Progressive relaxation: constraints loosen as tries increase
+                cooldown_limit = 2 if scarce else 3
+                if tries <= cooldown_limit and src_sig in recent_sources[-COOLDOWN_K:]:
+                    _m_inc(metrics, "skip_recent_source")
+                    continue
+
+                reuse_limit = 4 if scarce else 6
+                if used >= MAX_PER_SOURCE and tries <= reuse_limit:
+                    _m_inc(metrics, "skip_max_per_source")
+                    continue
+
+                tf_local_index = None
+                if qtype == "tf":
+                    tf_counter += 1
+                    tf_local_index = tf_counter
+
+                seen_limit = 2 if scarce else 3
+                if qtype in ("mcq", "fill") and tries <= seen_limit and (src_sig in seen_source_sigs):
+                    continue
+
+                try:
+                    q = await generate_one_question(
+                        client=client,
+                        qtype=qtype,
+                        paragraph=paragraph,
+                        difficulty_setting=difficulty,
+                        question_index=i * 10 + tries,
+                        tf_index=tf_local_index,
+                        metrics=metrics
+                    )
+
+                    q_text = str(q.get("question", "")).strip()
+                    if not q_text:
+                        last_err = ValueError("Generated question text is empty")
+                        continue
+
+                    q_norm = _normalize_text(q_text)
+                    q_sig = _signature(q_norm)
+
+                    if q_sig in seen_question_sigs:
+                        continue
+
+                    if seen_question_norms and _too_similar(q_text, seen_question_norms, threshold=SIM_THRESHOLD):
+                        _m_inc(metrics, "skip_too_similar")
+                        continue
+
+                    q["source"] = src_preview
+                    quiz.append(q)
+
+                    dd = q.get("difficulty")
+                    try:
+                        dd_int = int(dd)
+                    except Exception:
+                        dd_int = None
+                    if dd_int in (1, 2, 3, 4, 5):
+                        metrics[f"difficulty_count_{dd_int}"] = int(metrics.get(f"difficulty_count_{dd_int}", 0)) + 1
+
+                    seen_question_sigs.add(q_sig)
+                    seen_question_norms.append(q_norm)
+
+                    source_use_count[src_sig] = int(source_use_count.get(src_sig, 0)) + 1
+                    recent_sources.append(src_sig)
+                    all_used_sources.append(src_sig)
+
+                    if qtype != "tf":
+                        seen_source_sigs.add(src_sig)
+
+                    break
+
+                except Exception as e:
+                    last_err = e
+                    continue
+
+            else:
+                log.warning("Question %d/%d (%s) failed after %d tries: %s",
+                            i, len(type_plan), qtype, max_tries, last_err)
+                metrics["skipped_questions"] = int(metrics.get("skipped_questions", 0)) + 1
+
+    finally:
+        await client.close()
 
     total_sources = len(paragraphs)
     unique_used = len(set(all_used_sources))

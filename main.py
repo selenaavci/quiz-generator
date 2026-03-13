@@ -10,7 +10,7 @@ def run_quiz_generation(
     mcq_count: int,
     tf_count: int,
     fill_count: int,
-    open_count: int = 0,
+    difficulty: str = "Orta",
     output: str = "quiz_output.json",
 ):
 
@@ -24,7 +24,7 @@ def run_quiz_generation(
     print(f"{len(paragraphs)} adet anlamlı içerik bulundu.")
 
     print("LLM üzerinden sorular üretiliyor bu işlem birkaç saniye sürebilir.")
-    quiz = asyncio.run(generate_quiz(paragraphs, mcq_count, tf_count, fill_count, open_count))
+    quiz = asyncio.run(generate_quiz(paragraphs, mcq_count, tf_count, fill_count, difficulty=difficulty))
 
     print("Quiz çıktısı kaydediliyor:", output)
     with open(output, "w", encoding="utf-8") as f:
@@ -39,7 +39,7 @@ async def run_quiz_generation_async(
     mcq_count: int,
     tf_count: int,
     fill_count: int,
-    open_count: int = 0,
+    difficulty: str = "Orta",
     output: str = "quiz_output.json",
 ):
 
@@ -53,7 +53,7 @@ async def run_quiz_generation_async(
     print(f"{len(paragraphs)} adet anlamlı içerik bulundu.")
 
     print("LLM üzerinden sorular üretiliyor bu işlem birkaç saniye sürebilir.")
-    quiz = await generate_quiz(paragraphs, mcq_count, tf_count, fill_count, open_count)
+    quiz = await generate_quiz(paragraphs, mcq_count, tf_count, fill_count, difficulty=difficulty)
 
     print("Quiz çıktısı kaydediliyor:", output)
     with open(output, "w", encoding="utf-8") as f:
@@ -72,8 +72,8 @@ if __name__ == "__main__":
     parser.add_argument("--mcq", type=int, default=3, help="Kaç adet çoktan seçmeli soru?")
     parser.add_argument("--tf", type=int, default=2, help="Kaç adet doğru/yanlış sorusu?")
     parser.add_argument("--fill", type=int, default=2, help="Kaç adet boşluk doldurma sorusu?")
-    parser.add_argument("--open", type=int, default=0, help="Kaç adet açık uçlu soru?")
+    parser.add_argument("--difficulty", type=str, default="Orta", help="Zorluk seviyesi (Kolay/Orta/Zor)")
     parser.add_argument("--out", type=str, default="quiz_output.json", help="Çıktı dosyası")
 
     args = parser.parse_args()
-    run_quiz_generation(args.file, args.mcq, args.tf, args.fill, args.open, args.out)
+    run_quiz_generation(args.file, args.mcq, args.tf, args.fill, difficulty=args.difficulty, output=args.out)
