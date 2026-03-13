@@ -159,7 +159,7 @@ def _dedupe_chunks(chunks: List[str]) -> List[str]:
 
 def extract_context_chunks(
     text: str,
-    max_words: int = 160,
+    max_words: int = 170,
     min_words: int = 25,
     overlap_words: int = 20,
     metrics: Dict[str, Any] = None,
