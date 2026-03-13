@@ -12,7 +12,6 @@ from prompts import (
     prompt_mcq_stage2_distractors,
     prompt_mcq_stage3_verify,
     prompt_open_ended,
-    prompt_open_ended_easy,
 )
 from parser import (
     parse_mcq,
