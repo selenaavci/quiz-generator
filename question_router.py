@@ -1165,21 +1165,6 @@ async def generate_one_question(
             _m_inc(metrics, "fill_fail")
             raise
 
-    if qtype == "open":
-        try:
-            out = await _generate_open_with_retry(
-                client=client,
-                paragraph=paragraph,
-                difficulty_setting=d,
-                question_index=question_index,
-                metrics=metrics
-            )
-            if not _is_grounded_to_context(str(out.get("question", "")), paragraph, min_ratio=0.08):
-                raise ValueError("Open context grounding guard failed")
-            return out
-        except Exception:
-            raise
-
     raise ValueError(f"Unknown question type: {qtype}")
 
 # ============================================================
@@ -1226,22 +1211,6 @@ def _init_metrics() -> dict:
         "fill_quality_fail": 0,
         "fill_generic_answer_rejected": 0,
 
-        "open_total": 0,
-        "open_success": 0,
-        "open_fail": 0,
-        "open_retry": 0,
-        "open_guard_generic": 0,
-        "open_guard_leakage": 0,
-        "open_guard_absolute": 0,
-        "open_keyword_rejected": 0,
-        "open_keyword_autofill_used": 0,
-
-        "open_fallback_llm_used": 0,
-        "open_easy_total": 0,
-        "open_easy_retry": 0,
-        "open_easy_success": 0,
-        "open_easy_fail": 0,
-
         "coverage_total_sources": 0,
         "coverage_unique_sources_used": 0,
         "coverage_ratio": 0.0,
@@ -1261,7 +1230,6 @@ async def generate_quiz(
     mcq_count: int,
     tf_count: int,
     fill_count: int,
-    open_count: int = 0,
     difficulty: Union[int, str] = "Orta",
     metrics: dict = None,
 ) -> List[Dict[str, Any]]:
@@ -1278,7 +1246,7 @@ async def generate_quiz(
     if metrics is None:
         metrics = _init_metrics()
 
-    type_plan = _build_type_plan(mcq_count, tf_count, fill_count, open_count)
+    type_plan = _build_type_plan(mcq_count, tf_count, fill_count)
 
     seen_question_sigs = set()
     seen_question_norms: List[str] = []
@@ -1297,7 +1265,7 @@ async def generate_quiz(
     SIM_THRESHOLD = 0.94 if n_par >= 12 else 0.96
 
     for i, qtype in enumerate(type_plan, start=1):
-        max_tries = 7 if qtype != "open" else 5
+        max_tries =  5
         tries = 0
         last_err = None
         paragraph = ""
@@ -1367,9 +1335,6 @@ async def generate_quiz(
                     _m_inc(metrics, "skip_too_similar")
                     continue
 
-                if q.get("type") == "open":
-                    q.pop("answer", None)
-
                 q["source"] = src_preview
                 quiz.append(q)
 
@@ -1436,16 +1401,6 @@ async def generate_quiz(
                     "source": (paragraph[:200] + "...") if paragraph else ""
                 })
 
-            elif qtype == "open":
-                quiz.append({
-                    "type": "open",
-                    "question": f"Metindeki temel noktaları kendi cümlelerinle açıklayın: \"{base_short}\"",
-                    "keywords": _derive_open_keywords(base_short, paragraph, limit=6) or ["temel", "kavram", "açıklama"],
-                    "explanation": "",
-                    "difficulty": 3,
-                    "source": (paragraph[:200] + "...") if paragraph else ""
-                })
-
             metrics["skipped_questions"] = int(metrics.get("skipped_questions", 0)) + 1
             if paragraph:
                 src_sig = _signature(paragraph)
@@ -1474,12 +1429,13 @@ async def generate_quiz(
         metrics["coverage_avg_reuse"] = 0.0
 
     return quiz
+
+
 async def generate_quiz_with_metrics(
     paragraphs: List[str],
     mcq_count: int,
     tf_count: int,
     fill_count: int,
-    open_count: int = 0,
     difficulty: Union[int, str] = "Orta",
     preprocessing_metrics: Dict[str, Any] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -1504,8 +1460,6 @@ async def generate_quiz_with_metrics(
             paragraphs=paragraphs,
             mcq_count=mcq_count,
             tf_count=tf_count,
-            fill_count=fill_count,
-            open_count=open_count,
             difficulty=difficulty,
             metrics=metrics,
         )
