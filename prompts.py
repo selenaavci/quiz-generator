@@ -110,32 +110,33 @@ Açıklama: ...
 
 
 def prompt_fill(sentence: str, difficulty: int = 3) -> str:
-
     rules = f"""
 {quality_block(difficulty)}
 
 Kurallar:
-- Girdi TEK bir cümledir. Bu cümleden boşluk doldurma sorusu üret.
-- Soruda yalnızca 1 tane boşluk olacak ve boşluk tam olarak şu şekilde yazılacak: _______
-- Boşluğa gelecek cevap:
-    - cümlede aynen geçmeli (birebir aynı yazım)
+- Girdi TEK bir cümledir.
+- Bu cümleden yalnızca 1 boşluk doldurma sorusu üret.
+- Boşluk tam olarak şu şekilde yazılmalı: _______
+- Cevap:
+    - cümlede aynen geçmeli
     - en fazla 3 kelime olmalı
-    - bir kavram/terim olmalı
-- Çıktı sadece JSON olacak. Markdown, code fence veya ekstra metin YASAK.
-- JSON çıktı şeması tam olarak şöyle olmalı:
-    {{
-    "type": "fill",
-    "question": "..._______...",
-    "answer": "...",
-    "explanation": "..."
-    }}
-- "question" alanında orijinal cümle korunur; sadece seçilen kavram yerine _______ yazılır.
-- "explanation" kısa (1-2 cümle) olmalı ve neden doğru olduğunu açıklamalı.
+    - soyut/genel bir kelime olmamalı
+    - mümkünse teknik terim veya açık kavram olmalı
+- Soru metni orijinal cümleye çok yakın kalmalı.
+- Çıktı sadece JSON olacak.
 
-DİL HEDEFİ:
-- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
-- İngilizce soru veya İngilizce cümle kurma.
-- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
+JSON:
+{{
+  "type": "fill",
+  "question": "..._______...",
+  "answer": "...",
+  "explanation": "..."
+}}
+
+Ek Kurallar:
+- "question" içinde answer aynen görünmemeli.
+- "explanation" en fazla 2 kısa cümle olmalı.
+- JSON öncesi/sonrası hiçbir metin yazma.
 """
 
     few_shot = """
@@ -160,8 +161,6 @@ Girdi cümle:
 
 {few_shot}
 
-Şimdi aşağıdaki TEK cümle için üret:
-
 Girdi cümle:
 \"{sentence}\"
 
@@ -170,11 +169,8 @@ SADECE JSON ÇIKTI ÜRET. JSON öncesi/sonrası hiçbir metin yazma.
 
 
 def prompt_mcq_stage1_core(context: str, difficulty: int = 3) -> str:
-    """
-    Stage 1: Soru çekirdeği + doğru cevap + kısa gerekçe + cevap tipi
-    """
     return f"""
-Aşağıdaki metne dayanarak 1 adet çoktan seçmeli soru için "çekirdek" üret.
+Aşağıdaki metne dayanarak 1 adet çoktan seçmeli soru için soru çekirdeği üret.
 
 Metin:
 \"{context}\"
@@ -183,28 +179,28 @@ Metin:
 
 Kurallar:
 - JSON dışında hiçbir şey yazma.
-- "question" tek ve net olmalı.
-- "correct_answer" metinden çıkarılabilir olmalı (uydurma yok).
-- "rationale" 1-2 cümle, metne dayanmalı.
+- Soru doğrudan metindeki ana kavram, amaç, sonuç, kural, istisna, süreç veya karşılaştırma bilgisini ölçmeli.
+- Soru çok genel olmamalı.
+- Soru tek ve net olmalı.
+- "correct_answer" kısa ve açık olmalı.
+- "correct_answer" metinden çıkarılabilir olmalı.
+- "rationale" 1-2 kısa cümle olmalı.
 - "answer_type" şu kategorilerden biri olmalı:
   "definition" | "purpose" | "consequence" | "rule" | "exception" | "process" | "comparison"
 
-JSON (anahtar isimlerini aynen kullan):
+JSON:
 {{
   "question": "...?",
   "correct_answer": "...",
   "rationale": "...",
   "answer_type": "definition"
 }}
-- JSON öncesi veya sonrası TEK BİR KELİME bile yazma.
+
+Ek Kurallar:
 - question mutlaka soru işareti ile bitsin.
-- correct_answer 1-8 kelime arası olsun.
-
-DİL HEDEFİ:
-- Üretilen soru, seçenekler ve açıklama TAMAMEN Türkçe olmalıdır.
-- İngilizce soru veya İngilizce cümle kurma.
-- Teknik terimler gerekiyorsa Türkçe karşılığını kullan. 
-
+- correct_answer 1-6 kelime arası olsun.
+- Çok uzun açıklama yazma.
+- JSON öncesi/sonrası hiçbir metin yazma.
 """.strip()
 
 
@@ -336,29 +332,32 @@ def prompt_open_ended(context: str, difficulty: int = 3) -> str:
     d = max(1, min(5, d))
 
     if d <= 2:
-        style = "Soru Tipi (Zorluk 1-2): Tanım / amaç odaklı, kısa ve net."
+        style = "Soru tipi: kısa tanım / amaç odaklı."
     elif d == 3:
-        style = "Soru Tipi (Zorluk 3): Açıklama / ilişkilendirme."
+        style = "Soru tipi: açıklama / ilişkilendirme."
     elif d == 4:
-        style = "Soru Tipi (Zorluk 4): Kısa senaryo / uygulama."
+        style = "Soru tipi: kısa uygulama / yorumlama."
     else:
-        style = "Soru Tipi (Zorluk 5): Analiz / istisna / yanlış çıkarım."
+        style = "Soru tipi: analiz / istisna / çıkarım."
 
     rules = f"""
 {quality_block(d)}
 
 Kurallar:
-- YALNIZCA aşağıdaki metne dayan (uydurma yok).
-- Önce soruyu üret, sonra bu soruyu metne dayanarak 2-5 cümleyle SEN CEVAPLA.
-- "answer" metin dışı bilgi içermemeli; mümkünse metindeki ifadeleri kullan.
-- Sonra "keywords" üret:
-  * 3-6 adet
-  * Her biri 1-3 kelime
-  * Her keyword, "answer" içinde BİREBİR geçmek zorunda (aynı yazım)
-  * Stopword/generic kelimeler ("şey", "durum", "süreç", "yöntem") YASAK
-- Çıktı SADECE JSON olacak. Markdown / code fence / ekstra metin YASAK.
+- YALNIZCA aşağıdaki metne dayan.
+- Tek bir açık uçlu soru üret.
+- Soru mümkün olduğunca tek bir ana kavrama odaklansın.
+- Soru çok genel olmasın.
+- Sonra bu soruya 2-4 cümlelik kısa bir model cevap yaz.
+- "answer" metin dışı bilgi içermesin.
+- Ardından "keywords" üret:
+  * 3-5 adet
+  * her biri 1-3 kelime
+  * her keyword "answer" içinde BİREBİR geçmeli
+  * genel kelimeler kullanma: şey, durum, süreç, yöntem, unsur, konu vb.
+- Çıktı SADECE JSON olacak.
 
-JSON Şeması:
+JSON:
 {{
   "type": "open",
   "question": "...?",
@@ -366,6 +365,11 @@ JSON Şeması:
   "keywords": ["...", "...", "..."],
   "explanation": ""
 }}
+
+Ek Kurallar:
+- Soru tek soru işaretli cümle olsun.
+- answer gereksiz uzun olmasın.
+- JSON öncesi/sonrası hiçbir metin yazma.
 """
 
     return f"""
@@ -376,23 +380,26 @@ Metin:
 
 {rules}
 
-SADECE JSON ÇIKTI ÜRET. JSON öncesi/sonrası hiçbir metin yazma.
+SADECE JSON ÇIKTI ÜRET.
 """.strip()
 
 
 def prompt_open_ended_easy(context: str) -> str:
-    rules = f"""
-GENEL KURALLAR:
-- YALNIZCA aşağıdaki metne dayan (uydurma yok).
-- Tek bir açık uçlu soru üret.
-- Soru “tanım/amaç/sonuç” gibi basit ve doğrudan olsun.
-- Sonra soruyu 2-4 cümleyle SEN cevapla (metin dışı bilgi yok).
-- "keywords" üret:
-  * 3-6 adet
-  * 1-3 kelime
-  * Her biri "answer" içinde BİREBİR geçmek zorunda
-  * Stopword/generic kelimeler YASAK
-- Çıktı SADECE JSON.
+    return f"""
+Aşağıdaki metne dayanarak tek bir kısa açık uçlu soru üret.
+
+Metin:
+\"\"\"{context}\"\"\"
+
+Kurallar:
+- YALNIZCA metne dayan.
+- Soru kısa ve net olsun.
+- Soru tek bir kavrama odaklansın.
+- Ardından soruyu 2-3 cümle ile cevapla.
+- "keywords" 3-5 adet olsun.
+- Her keyword answer içinde aynen geçsin.
+- Genel kelimeler kullanma.
+- Çıktı SADECE JSON olsun.
 
 JSON:
 {{
@@ -402,12 +409,6 @@ JSON:
   "keywords": ["...", "...", "..."],
   "explanation": ""
 }}
-"""
-    return f"""
-Metin:
-\"\"\"{context}\"\"\"
 
-{rules}
-
-SADECE JSON ÇIKTI ÜRET. JSON öncesi/sonrası hiçbir metin yazma.
+JSON dışında hiçbir şey yazma.
 """.strip()
