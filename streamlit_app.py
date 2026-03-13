@@ -71,7 +71,6 @@ def distribute_total(total: int, enabled: Dict[str, bool]) -> Tuple[int, int, in
         counts.get("mcq", 0),
         counts.get("tf", 0),
         counts.get("fill", 0),
-        counts.get("open", 0),
     )
 
 
